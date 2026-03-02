@@ -1,0 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  orgId     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  prompts   Prompt[]
+}
+
+model Prompt {
+  id        String          @id @default(cuid())
+  projectId String
+  title     String
+  rawPrompt String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  versions  PromptVersion[]
+  project   Project         @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+}
+
+model PromptVersion {
+  id             String   @id @default(cuid())
+  promptId       String
+  optimizedPrompt String
+  keyChanges     Json
+  scores         Json
+  missingFields  Json
+  riskFlags      Json
+  rawInputPrompt String
+  mode           String
+  model          String
+  tokenIn        Int?
+  tokenOut       Int?
+  createdAt      DateTime @default(now())
+  prompt         Prompt   @relation(fields: [promptId], references: [id])
+
+  @@index([promptId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  meta       Json
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Usage {
+  id            String   @id @default(cuid())
+  orgId         String?
+  date          DateTime
+  optimizeCount Int      @default(0)
+  tokenIn       Int      @default(0)
+  tokenOut      Int      @default(0)
+
+  @@index([orgId, date])
+  @@index([date])
+}
