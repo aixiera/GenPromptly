@@ -50,9 +50,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ result: resp.output_text ?? "" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { error: "Server error.", detail: err?.message ?? String(err) },
+      { error: "Server error.", detail: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
   }
