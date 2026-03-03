@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { apiPost } from "../lib/apiClient";
+import { apiDelete, apiPost, getApiErrorMessage } from "../lib/apiClient";
 import { useProjects } from "../lib/hooks/useProjects";
 import { usePrompts } from "../lib/hooks/usePrompts";
+import type { Prompt } from "../lib/types";
 
 const stats = [
   ["Prompts Count", "1,284", "+12%"],
@@ -12,11 +13,15 @@ const stats = [
   ["Model Cost", "$2,390", "-6%"],
 ];
 
+const LOADING_TEXT = "Loading data...";
+const EMPTY_PROJECTS_TEXT = "No projects yet.";
+const EMPTY_PROMPTS_TEXT = "No prompts yet.";
+
 type DashboardProps = {
   selectedProjectId: string | null;
   selectedPromptId: string | null;
   onSelectProject: (projectId: string) => void;
-  onSelectPrompt: (promptId: string) => void;
+  onSelectPrompt: (promptId: string | null) => void;
 };
 
 export function Dashboard({
@@ -30,11 +35,21 @@ export function Dashboard({
     data: prompts,
     isLoading: isPromptsLoading,
     error: promptsError,
+    refetch: refetchPrompts,
   } = usePrompts(selectedProjectId);
+
   const [newProjectName, setNewProjectName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const [newPromptTitle, setNewPromptTitle] = useState("");
+  const [newPromptRawPrompt, setNewPromptRawPrompt] = useState("");
+  const [isCreatingPrompt, setIsCreatingPrompt] = useState(false);
+  const [createPromptMessage, setCreatePromptMessage] = useState<string | null>(null);
+  const [createPromptError, setCreatePromptError] = useState<string | null>(null);
+  const [isDeletingPromptId, setIsDeletingPromptId] = useState<string | null>(null);
+  const [deletePromptError, setDeletePromptError] = useState<string | null>(null);
 
   const handleCreateProject = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -56,9 +71,72 @@ export function Dashboard({
       setCreateMessage("Project created");
       await refetch();
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create project");
+      setCreateError(getApiErrorMessage(err, "Failed to create project"));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleCreatePrompt = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!selectedProjectId) {
+      setCreatePromptError("Select a project first");
+      setCreatePromptMessage(null);
+      return;
+    }
+
+    const title = newPromptTitle.trim();
+    const rawPrompt = newPromptRawPrompt.trim();
+
+    if (!title) {
+      setCreatePromptError("Prompt title is required");
+      setCreatePromptMessage(null);
+      return;
+    }
+
+    setIsCreatingPrompt(true);
+    setCreatePromptError(null);
+    setCreatePromptMessage(null);
+
+    try {
+      const createdPrompt = await apiPost<Prompt>("/api/prompts", {
+        projectId: selectedProjectId,
+        title,
+        rawPrompt: rawPrompt || "You are a helpful assistant.",
+      });
+
+      setNewPromptTitle("");
+      setNewPromptRawPrompt("");
+      setCreatePromptMessage("Prompt created");
+      await refetchPrompts();
+      onSelectPrompt(createdPrompt.id);
+    } catch (err: unknown) {
+      setCreatePromptError(getApiErrorMessage(err, "Failed to create prompt"));
+    } finally {
+      setIsCreatingPrompt(false);
+    }
+  };
+
+  const handleDeletePrompt = async (promptId: string, promptTitle: string) => {
+    const shouldDelete = window.confirm(`Delete prompt "${promptTitle}"?`);
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingPromptId(promptId);
+    setDeletePromptError(null);
+
+    try {
+      await apiDelete<{ id: string }>(`/api/prompts/${encodeURIComponent(promptId)}`);
+      if (selectedPromptId === promptId) {
+        onSelectPrompt(null);
+      }
+      await refetchPrompts();
+    } catch (err: unknown) {
+      setDeletePromptError(getApiErrorMessage(err, "Failed to delete prompt"));
+    } finally {
+      setIsDeletingPromptId(null);
     }
   };
 
@@ -74,6 +152,7 @@ export function Dashboard({
           </article>
         ))}
       </div>
+
       <div className="table-wrap">
         <div className="row-between">
           <h3>Projects</h3>
@@ -98,14 +177,14 @@ export function Dashboard({
             </button>
           </form>
         </div>
-        {createMessage && <p className="muted">{createMessage}</p>}
-        {createError && <p className="muted">{createError}</p>}
+        {createMessage ? <p className="muted">{createMessage}</p> : null}
+        {createError ? <p className="muted">{createError}</p> : null}
         {isLoading ? (
-          <p>Loading...</p>
+          <p className="muted">{LOADING_TEXT}</p>
         ) : error ? (
           <p className="muted">{error}</p>
         ) : !projects || projects.length === 0 ? (
-          <p>No projects yet</p>
+          <p className="muted">{EMPTY_PROJECTS_TEXT}</p>
         ) : (
           <table>
             <thead>
@@ -137,43 +216,86 @@ export function Dashboard({
           </table>
         )}
       </div>
+
       <div className="table-wrap">
         <h3>Prompts</h3>
         {!selectedProjectId ? (
           <p>Select a project to view prompts.</p>
-        ) : isPromptsLoading ? (
-          <p>Loading...</p>
-        ) : promptsError ? (
-          <p className="muted">{promptsError}</p>
-        ) : !prompts || prompts.length === 0 ? (
-          <p>No prompts yet</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Updated</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {prompts.map((prompt) => (
-                <tr key={prompt.id}>
-                  <td>{prompt.title}</td>
-                  <td>{new Date(prompt.updatedAt).toLocaleString()}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => onSelectPrompt(prompt.id)}
-                    >
-                      {selectedPromptId === prompt.id ? "Selected" : "Open Editor"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <form onSubmit={handleCreatePrompt} style={{ marginBottom: "12px" }}>
+              <input
+                type="text"
+                value={newPromptTitle}
+                onChange={(e) => setNewPromptTitle(e.target.value)}
+                placeholder="New prompt title"
+                style={{
+                  width: "100%",
+                  border: "1px solid var(--line)",
+                  borderRadius: "10px",
+                  padding: "10px",
+                  marginBottom: "8px",
+                }}
+              />
+              <textarea
+                rows={4}
+                value={newPromptRawPrompt}
+                onChange={(e) => setNewPromptRawPrompt(e.target.value)}
+                placeholder="Prompt content (optional)"
+              />
+              <button type="submit" className="btn primary" disabled={isCreatingPrompt}>
+                {isCreatingPrompt ? "Creating..." : "Create Prompt"}
+              </button>
+            </form>
+
+            {createPromptMessage ? <p className="muted">{createPromptMessage}</p> : null}
+            {createPromptError ? <p className="muted">{createPromptError}</p> : null}
+            {deletePromptError ? <p className="muted">{deletePromptError}</p> : null}
+
+            {isPromptsLoading ? (
+              <p className="muted">{LOADING_TEXT}</p>
+            ) : promptsError ? (
+              <p className="muted">{promptsError}</p>
+            ) : !prompts || prompts.length === 0 ? (
+              <p className="muted">{EMPTY_PROMPTS_TEXT}</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prompts.map((prompt) => (
+                    <tr key={prompt.id}>
+                      <td>{prompt.title}</td>
+                      <td>{new Date(prompt.updatedAt).toLocaleString()}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => onSelectPrompt(prompt.id)}
+                        >
+                          {selectedPromptId === prompt.id ? "Selected" : "Open Editor"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => handleDeletePrompt(prompt.id, prompt.title)}
+                          disabled={isDeletingPromptId === prompt.id}
+                          style={{ marginLeft: "8px" }}
+                        >
+                          {isDeletingPromptId === prompt.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
       </div>
     </section>

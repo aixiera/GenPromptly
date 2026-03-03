@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import prisma from "GenPromptly/lib/db";
-import { error, success } from "GenPromptly/lib/api/response";
-import { HttpError } from "GenPromptly/lib/api/httpError";
-import { optimizePrompt } from "GenPromptly/lib/ai/optimizer";
+import prisma from "../../../../../lib/db";
+import { error, success } from "../../../../../lib/api/response";
+import { HttpError } from "../../../../../lib/api/httpError";
+import { optimizePrompt } from "../../../../../lib/ai/optimizer";
 
 export const runtime = "nodejs";
 
@@ -13,9 +13,20 @@ const MODEL_NAME = "gpt-4.1-mini";
 
 const requestCounts = new Map<string, { count: number; windowStart: number }>();
 
+const OptimizeModeSchema = z.enum([
+  "clarity",
+  "structure",
+  "detail",
+  "general",
+  "marketing",
+  "healthcare",
+  "finance",
+  "legal",
+]);
+
 const OptimizeRequestSchema = z
   .object({
-    mode: z.enum(["clarity", "structure", "detail"]).default("clarity"),
+    mode: OptimizeModeSchema.default("general"),
     goal: z.string().trim().min(1, "goal cannot be empty").max(300, "goal is too long").optional(),
   })
   .strict();
@@ -26,6 +37,22 @@ type RouteContext = {
 
 function parsePromptId(id: string) {
   return z.string().trim().min(1, "id is required").max(120, "id is too long").safeParse(id);
+}
+
+function mapToOptimizerMode(mode: z.infer<typeof OptimizeModeSchema>): "clarity" | "structure" | "detail" {
+  if (mode === "clarity" || mode === "structure" || mode === "detail") {
+    return mode;
+  }
+
+  if (mode === "marketing" || mode === "finance") {
+    return "structure";
+  }
+
+  if (mode === "healthcare" || mode === "legal") {
+    return "detail";
+  }
+
+  return "clarity";
 }
 
 function getClientIp(req: Request): string {
@@ -115,7 +142,8 @@ export async function POST(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
     }
 
-    const result = await optimizePrompt(prompt.rawPrompt, parsedBody.data.mode, parsedBody.data.goal);
+    const optimizerMode = mapToOptimizerMode(parsedBody.data.mode);
+    const result = await optimizePrompt(prompt.rawPrompt, optimizerMode, parsedBody.data.goal);
 
     const latestVersion = await prisma.$transaction(async (tx) => {
       const createdVersion = await tx.promptVersion.create({

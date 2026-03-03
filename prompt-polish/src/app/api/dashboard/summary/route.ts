@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "GenPromptly/lib/db";
-import { error, success } from "GenPromptly/lib/api/response";
+import prisma from "../../../../lib/db";
+import { error, success } from "../../../../lib/api/response";
 
 export const runtime = "nodejs";
 

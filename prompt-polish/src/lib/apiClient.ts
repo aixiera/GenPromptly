@@ -14,6 +14,35 @@ type ApiError = {
 
 type ApiEnvelope<T> = ApiSuccess<T> | ApiError;
 
+export class ApiRequestError extends Error {
+  status: number;
+  code?: string;
+  details?: unknown;
+
+  constructor(message: string, status: number, code?: string, details?: unknown) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 429 || error.code === "RATE_LIMITED") {
+      return "Too many requests. Try again in a minute.";
+    }
+    return error.message || fallback;
+  }
+
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  return fallback;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -61,15 +90,29 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const parsed = await parseJsonResponse(response, url);
+  let parsed: unknown;
+  try {
+    parsed = await parseJsonResponse(response, url);
+  } catch (err: unknown) {
+    if (response.status === 429) {
+      throw new ApiRequestError("Too many requests. Try again in a minute.", 429, "RATE_LIMITED");
+    }
+    throw err;
+  }
+
   if (!isApiSuccess<T>(parsed) && !isApiError(parsed)) {
-    throw new Error(`Invalid API envelope from ${url} (${response.status})`);
+    throw new ApiRequestError(`Invalid API envelope from ${url} (${response.status})`, response.status);
   }
 
   const envelope: ApiEnvelope<T> = parsed;
 
   if (envelope.ok === false) {
-    throw new Error(envelope.error.message);
+    throw new ApiRequestError(
+      envelope.error.message,
+      response.status,
+      envelope.error.code,
+      envelope.error.details
+    );
   }
 
   return envelope.data;
@@ -91,4 +134,8 @@ export async function apiPatch<T>(url: string, body: unknown): Promise<T> {
     method: "PATCH",
     body: JSON.stringify(body),
   });
+}
+
+export async function apiDelete<T>(url: string): Promise<T> {
+  return request<T>(url, { method: "DELETE" });
 }

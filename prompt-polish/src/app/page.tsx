@@ -29,12 +29,14 @@ export default function Home() {
           }}
           onSelectPrompt={(promptId) => {
             setSelectedPromptId(promptId);
-            setActivePage("editor");
+            if (promptId) {
+              setActivePage("editor");
+            }
           }}
         />
       );
     }
-    if (activePage === "editor") return <PromptEditor />;
+    if (activePage === "editor") return <PromptEditor promptId={selectedPromptId} />;
     if (activePage === "templates") return <Templates />;
     if (activePage === "team") return <Team />;
     if (activePage === "compliance") {
@@ -55,7 +57,9 @@ export default function Home() {
         }}
         onSelectPrompt={(promptId) => {
           setSelectedPromptId(promptId);
-          setActivePage("editor");
+          if (promptId) {
+            setActivePage("editor");
+          }
         }}
       />
     );

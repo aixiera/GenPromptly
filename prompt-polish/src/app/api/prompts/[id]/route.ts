@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import prisma from "GenPromptly/lib/db";
-import { error, success } from "GenPromptly/lib/api/response";
-import { CreatePromptSchema, UpdatePromptSchema } from "GenPromptly/lib/validation/prompt";
+import prisma from "../../../../lib/db";
+import { error, success } from "../../../../lib/api/response";
+import {
+  CreatePromptSchema,
+  UpdatePromptSchema,
+} from "../../../../lib/validation/prompt";
 
 export const runtime = "nodejs";
 
@@ -86,5 +89,40 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     return NextResponse.json(success(updatedPrompt), { status: 200 });
   } catch {
     return NextResponse.json(error("INTERNAL_ERROR", "Failed to update prompt"), { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, ctx: RouteContext) {
+  const { id } = await ctx.params;
+  const parsedId = parsePromptId(id);
+
+  if (!parsedId.success) {
+    return NextResponse.json(error("VALIDATION_ERROR", "Invalid prompt id", parsedId.error.flatten()), {
+      status: 400,
+    });
+  }
+
+  try {
+    const existing = await prisma.prompt.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
+    }
+
+    await prisma.$transaction([
+      prisma.promptVersion.deleteMany({
+        where: { promptId: parsedId.data },
+      }),
+      prisma.prompt.delete({
+        where: { id: parsedId.data },
+      }),
+    ]);
+
+    return NextResponse.json(success({ id: parsedId.data }), { status: 200 });
+  } catch {
+    return NextResponse.json(error("INTERNAL_ERROR", "Failed to delete prompt"), { status: 500 });
   }
 }
