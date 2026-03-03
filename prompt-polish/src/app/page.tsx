@@ -14,9 +14,26 @@ export type AppPage = "dashboard" | "editor" | "templates" | "team" | "complianc
 
 export default function Home() {
   const [activePage, setActivePage] = useState<AppPage>("dashboard");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
 
   const pageContent = useMemo(() => {
-    if (activePage === "dashboard") return <Dashboard />;
+    if (activePage === "dashboard") {
+      return (
+        <Dashboard
+          selectedProjectId={selectedProjectId}
+          selectedPromptId={selectedPromptId}
+          onSelectProject={(projectId) => {
+            setSelectedProjectId(projectId);
+            setSelectedPromptId(null);
+          }}
+          onSelectPrompt={(promptId) => {
+            setSelectedPromptId(promptId);
+            setActivePage("editor");
+          }}
+        />
+      );
+    }
     if (activePage === "editor") return <PromptEditor />;
     if (activePage === "templates") return <Templates />;
     if (activePage === "team") return <Team />;
@@ -28,8 +45,21 @@ export default function Home() {
         </>
       );
     }
-    return <Dashboard />;
-  }, [activePage]);
+    return (
+      <Dashboard
+        selectedProjectId={selectedProjectId}
+        selectedPromptId={selectedPromptId}
+        onSelectProject={(projectId) => {
+          setSelectedProjectId(projectId);
+          setSelectedPromptId(null);
+        }}
+        onSelectPrompt={(promptId) => {
+          setSelectedPromptId(promptId);
+          setActivePage("editor");
+        }}
+      />
+    );
+  }, [activePage, selectedProjectId, selectedPromptId]);
 
   return (
       <main className="app-shell">

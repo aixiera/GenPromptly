@@ -1,27 +1,9 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { optimizePrompt } from "../../../lib/ai/optimizer";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const MODE_TO_INSTRUCTIONS: Record<string, string> = {
-  clarity: [
-    "Rewrite the user's prompt to be clearer and less ambiguous while keeping the original intent.",
-    "Remove fluff, resolve vague references, and make requirements explicit.",
-    "Return ONLY the optimized prompt. No explanations.",
-  ].join("\n"),
-  structure: [
-    "Rewrite the user's prompt into a well-structured professional prompt.",
-    "Use sections: Goal, Context, Requirements, Constraints, Output Format.",
-    "Return ONLY the optimized prompt. No explanations.",
-  ].join("\n"),
-  detail: [
-    "Rewrite the user's prompt to be more detailed and complete.",
-    "Add helpful missing fields with placeholders if needed (e.g., [TARGET_AUDIENCE], [TONE]).",
-    "Return ONLY the optimized prompt. No explanations.",
-  ].join("\n"),
-};
+const VALID_MODES = new Set(["clarity", "structure", "detail"]);
 
 export async function POST(req: Request) {
   try {
@@ -39,17 +21,13 @@ export async function POST(req: Request) {
     if (text.length > 8000) {
       return NextResponse.json({ error: "Prompt too long (max 8000 chars)." }, { status: 400 });
     }
-    if (!MODE_TO_INSTRUCTIONS[m]) {
+    if (!VALID_MODES.has(m)) {
       return NextResponse.json({ error: "Invalid mode." }, { status: 400 });
     }
 
-    const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
-      instructions: MODE_TO_INSTRUCTIONS[m],
-      input: text,
-    });
+    const result = await optimizePrompt(text, m);
 
-    return NextResponse.json({ result: resp.output_text ?? "" });
+    return NextResponse.json({ result: result.optimizedPrompt });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Server error.", detail: err instanceof Error ? err.message : String(err) },
