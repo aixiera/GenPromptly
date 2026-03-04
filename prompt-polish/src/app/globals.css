@@ -88,6 +88,8 @@ body {
 }
 .topbar p { margin: 6px 0 0; color: var(--muted); }
 .topbar-actions { display: flex; gap: 10px; }
+.topbar-actions-wrap { display: grid; justify-items: end; gap: 6px; }
+.topbar-status { margin: 0; font-size: 12px; }
 
 .btn {
   border-radius: 10px;
@@ -199,6 +201,38 @@ select:focus-visible,
 .badge-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .badge { border: 1px solid #b8cef0; background: #ebf3ff; color: #2557b7; border-radius: 999px; padding: 5px 10px; font-size: 12px; }
 pre { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px; font-size: 12px; overflow: auto; }
+
+.result-output {
+  min-height: 96px;
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.result-panel {
+  height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.result-wrap-text,
+.result-panel li {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.result-json {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .compare-card { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); }

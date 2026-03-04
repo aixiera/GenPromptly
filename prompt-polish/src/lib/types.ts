@@ -9,8 +9,21 @@ export type Project = {
 export type Prompt = {
   id: string;
   projectId: string;
+  templateId?: string | null;
   title: string;
   rawPrompt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Template = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  inputSchema: unknown;
+  systemPrompt: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -41,4 +54,22 @@ export type PromptVersion = {
   mode: string;
   model: string;
   createdAt: string;
+};
+
+export type DashboardMetricSummary = {
+  value: number | null;
+  deltaPct: number | null;
+};
+
+export type DashboardSummary = {
+  windowDays: number;
+  projectCount: number;
+  promptCount: number;
+  versionCount: number;
+  metrics: {
+    promptsCount: DashboardMetricSummary;
+    optimizeCount: DashboardMetricSummary;
+    compliancePassRate: DashboardMetricSummary;
+    modelCostUsd: DashboardMetricSummary;
+  };
 };

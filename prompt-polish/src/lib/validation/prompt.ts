@@ -3,8 +3,9 @@ import { z } from "zod";
 export const CreatePromptSchema = z
   .object({
     projectId: z.string().trim().min(1, "projectId is required").max(120),
+    templateId: z.string().trim().min(1, "templateId is required").max(120).optional(),
     title: z.string().trim().min(1, "Prompt title is required").max(200, "Prompt title is too long"),
-    rawPrompt: z.string().trim().min(1, "rawPrompt is required").max(8000, "rawPrompt is too long"),
+    rawPrompt: z.string().trim().max(8000, "rawPrompt is too long"),
   })
   .strict();
 

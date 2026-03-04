@@ -32,6 +32,17 @@ export async function POST(req: Request) {
       return NextResponse.json(error("NOT_FOUND", "Project not found"), { status: 404 });
     }
 
+    if (parsed.data.templateId) {
+      const template = await prisma.template.findUnique({
+        where: { id: parsed.data.templateId },
+        select: { id: true },
+      });
+
+      if (!template) {
+        return NextResponse.json(error("NOT_FOUND", "Template not found"), { status: 404 });
+      }
+    }
+
     const prompt = await prisma.prompt.create({
       data: parsed.data,
     });

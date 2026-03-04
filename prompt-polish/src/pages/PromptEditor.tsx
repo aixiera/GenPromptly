@@ -5,17 +5,38 @@ import { ComplianceBadge } from "../components/ComplianceBadge";
 import { VariablePanel } from "../components/VariablePanel";
 import { apiPatch, apiPost, getApiErrorMessage } from "../lib/apiClient";
 import { usePromptDetail } from "../lib/hooks/usePromptDetail";
-import type { PromptVersion } from "../lib/types";
+import type { Prompt, PromptVersion } from "../lib/types";
 
 type PromptEditorProps = {
   promptId: string | null;
+  selectedProjectId: string | null;
+  selectedTemplateId?: string | null;
+  onOpenPrompt: (promptId: string) => void;
 };
 
 const LOADING_TEXT = "Loading data...";
 const EMPTY_VERSIONS_TEXT = "No versions yet.";
 const EMPTY_RESULT_TEXT = "No optimized result yet.";
 
-export function PromptEditor({ promptId }: PromptEditorProps) {
+function normalizeScoreOutOfTen(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  const normalized = value > 10 ? value / 10 : value;
+  return Math.min(10, Math.max(0, normalized));
+}
+
+function formatScoreOutOfTen(value: number): string {
+  return normalizeScoreOutOfTen(value).toFixed(1);
+}
+
+export function PromptEditor({
+  promptId,
+  selectedProjectId,
+  selectedTemplateId,
+  onOpenPrompt,
+}: PromptEditorProps) {
   const { data, isLoading, error, refetch } = usePromptDetail(promptId);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftRawPrompt, setDraftRawPrompt] = useState("");
@@ -33,6 +54,8 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
   const [copyPromptFeedback, setCopyPromptFeedback] = useState<string | null>(null);
   const [copyJsonFeedback, setCopyJsonFeedback] = useState<string | null>(null);
   const [isRestoringVersion, setIsRestoringVersion] = useState(false);
+  const [isCreatingFromTemplate, setIsCreatingFromTemplate] = useState(false);
+  const [createFromTemplateError, setCreateFromTemplateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) {
@@ -60,6 +83,35 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
 
   const hasUnsavedChanges =
     !!data && (draftTitle !== data.title || draftRawPrompt !== data.rawPrompt);
+
+  const handleCreatePromptFromTemplate = async () => {
+    if (!selectedTemplateId) {
+      return;
+    }
+
+    if (!selectedProjectId) {
+      setCreateFromTemplateError("Select a project in Projects first.");
+      return;
+    }
+
+    setIsCreatingFromTemplate(true);
+    setCreateFromTemplateError(null);
+
+    try {
+      const createdPrompt = await apiPost<Prompt>("/api/prompts", {
+        projectId: selectedProjectId,
+        title: "Untitled Template Prompt",
+        rawPrompt: "",
+        templateId: selectedTemplateId,
+      });
+
+      onOpenPrompt(createdPrompt.id);
+    } catch (err: unknown) {
+      setCreateFromTemplateError(getApiErrorMessage(err, "Failed to create prompt from template"));
+    } finally {
+      setIsCreatingFromTemplate(false);
+    }
+  };
 
   const handleSaveDraft = async () => {
     if (!data || !hasUnsavedChanges) {
@@ -196,6 +248,21 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
     return (
       <section className="panel">
         <h2>Prompt Editor(Three Columns)</h2>
+        {selectedTemplateId ? (
+          <p className="muted">Selected tool: {selectedTemplateId}</p>
+        ) : null}
+        {selectedTemplateId ? (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleCreatePromptFromTemplate}
+            disabled={isCreatingFromTemplate}
+            style={{ marginBottom: "10px" }}
+          >
+            {isCreatingFromTemplate ? "Creating..." : "Create Prompt from Template"}
+          </button>
+        ) : null}
+        {createFromTemplateError ? <p className="muted">{createFromTemplateError}</p> : null}
         <p className="muted">Select a prompt to edit.</p>
       </section>
     );
@@ -229,6 +296,14 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
   }
 
   const selectedVersion = versions.find((v) => v.id === selectedVersionId) ?? versions[0] ?? null;
+  const displayedScores = selectedVersion
+    ? {
+        clarity: formatScoreOutOfTen(selectedVersion.scores.clarity),
+        context: formatScoreOutOfTen(selectedVersion.scores.context),
+        constraints: formatScoreOutOfTen(selectedVersion.scores.constraints),
+        format: formatScoreOutOfTen(selectedVersion.scores.format),
+      }
+    : null;
 
   return (
     <section className="panel">
@@ -236,6 +311,23 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
       <div className="editor-grid">
         <article className="editor-col">
           <h4>Industry Templates</h4>
+          {selectedTemplateId ? (
+            <p className="muted" style={{ marginBottom: "8px" }}>
+              Selected tool id: {selectedTemplateId}
+            </p>
+          ) : null}
+          {selectedTemplateId ? (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={handleCreatePromptFromTemplate}
+              disabled={isCreatingFromTemplate}
+              style={{ marginBottom: "10px" }}
+            >
+              {isCreatingFromTemplate ? "Creating..." : "Create Prompt from Template"}
+            </button>
+          ) : null}
+          {createFromTemplateError ? <p className="muted">{createFromTemplateError}</p> : null}
           <select><option>Healthcare - Patient Summary</option><option>Finance - Compliance Memo</option></select>
           <VariablePanel />
         </article>
@@ -358,7 +450,7 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
               </button>
             </div>
           ) : null}
-          <div className="output-box">
+          <div className="output-box result-output">
             {selectedVersion ? selectedVersion.optimizedPrompt : EMPTY_RESULT_TEXT}
           </div>
           {selectedVersion ? (
@@ -381,10 +473,10 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
               </div>
               {copyPromptFeedback ? <p className="muted">{copyPromptFeedback}</p> : null}
               {copyJsonFeedback ? <p className="muted">{copyJsonFeedback}</p> : null}
-              <div className="card-block" style={{ marginBottom: "10px" }}>
+              <div className="card-block result-panel" style={{ marginBottom: "10px" }}>
                 <h4>Result Panel</h4>
                 <p><strong>optimizedPrompt</strong></p>
-                <p className="muted">{selectedVersion.optimizedPrompt}</p>
+                <p className="muted result-wrap-text">{selectedVersion.optimizedPrompt}</p>
                 <p><strong>keyChanges</strong></p>
                 <ul>
                   {selectedVersion.keyChanges.length === 0 ? (
@@ -413,12 +505,12 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
               <div className="score-card">
                 <div>
                   <p>Clarity Score</p>
-                  <h3>{selectedVersion.scores.clarity} / 100</h3>
+                  <h3>{displayedScores?.clarity} / 10</h3>
                 </div>
                 <ul>
-                  <li>Context: {selectedVersion.scores.context}</li>
-                  <li>Constraints: {selectedVersion.scores.constraints}</li>
-                  <li>Format: {selectedVersion.scores.format}</li>
+                  <li>Context: {displayedScores?.context} / 10</li>
+                  <li>Constraints: {displayedScores?.constraints} / 10</li>
+                  <li>Format: {displayedScores?.format} / 10</li>
                 </ul>
               </div>
               <div className="badge-row">
@@ -428,7 +520,7 @@ export function PromptEditor({ promptId }: PromptEditorProps) {
                   selectedVersion.riskFlags.map((flag) => <ComplianceBadge key={flag} label={flag} />)
                 )}
               </div>
-              <pre>{JSON.stringify(selectedVersion, null, 2)}</pre>
+              <pre className="result-json">{JSON.stringify(selectedVersion, null, 2)}</pre>
             </>
           ) : null}
         </article>

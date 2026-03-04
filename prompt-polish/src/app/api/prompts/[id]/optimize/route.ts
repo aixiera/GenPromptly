@@ -3,15 +3,15 @@ import { z } from "zod";
 import prisma from "../../../../../lib/db";
 import { error, success } from "../../../../../lib/api/response";
 import { HttpError } from "../../../../../lib/api/httpError";
-import { optimizePrompt } from "../../../../../lib/ai/optimizer";
+import { optimizePromptWithMeta } from "../../../../../lib/ai/optimizer";
+import { validateOptimizeResult } from "../../../../../lib/promptQualityGuard";
+import { calibrateScores } from "../../../../../lib/promptScoreCalibration";
+import { optimizeRateLimiter } from "../../../../../lib/rateLimit";
 
 export const runtime = "nodejs";
 
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_REQUESTS = 20;
-const MODEL_NAME = "gpt-4.1-mini";
-
-const requestCounts = new Map<string, { count: number; windowStart: number }>();
+const FALLBACK_MODEL_NAME = "gpt-4.1-mini";
+const SLOW_REQUEST_THRESHOLD_MS = 3_000;
 
 const OptimizeModeSchema = z.enum([
   "clarity",
@@ -27,12 +27,19 @@ const OptimizeModeSchema = z.enum([
 const OptimizeRequestSchema = z
   .object({
     mode: OptimizeModeSchema.default("general"),
-    goal: z.string().trim().min(1, "goal cannot be empty").max(300, "goal is too long").optional(),
+    goal: z.string().trim().min(1, "goal cannot be empty").max(1200, "goal is too long").optional(),
   })
   .strict();
 
 type RouteContext = {
   params: { id: string } | Promise<{ id: string }>;
+};
+
+type PromptSelection = {
+  id: string;
+  rawPrompt: string;
+  templateId: string | null;
+  template: { id: string; key: string; systemPrompt: string } | null;
 };
 
 function parsePromptId(id: string) {
@@ -55,55 +62,62 @@ function mapToOptimizerMode(mode: z.infer<typeof OptimizeModeSchema>): "clarity"
   return "clarity";
 }
 
-function getClientIp(req: Request): string {
-  const xForwardedFor = req.headers.get("x-forwarded-for");
-  if (xForwardedFor) {
-    const first = xForwardedFor.split(",")[0]?.trim();
+function sanitizeText(value: string): string {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function getRequestActorKey(req: Request): string {
+  const userHeader = req.headers.get("x-user-id")?.trim();
+  if (userHeader) {
+    return `user:${userHeader}`;
+  }
+
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
     if (first) {
-      return first;
+      return `ip:${first}`;
     }
   }
 
-  const xRealIp = req.headers.get("x-real-ip")?.trim();
-  if (xRealIp) {
-    return xRealIp;
+  const realIp = req.headers.get("x-real-ip")?.trim();
+  if (realIp) {
+    return `ip:${realIp}`;
   }
 
-  return "unknown";
+  return "ip:unknown";
 }
 
-function checkRateLimit(ip: string): { limited: boolean; retryAfterSeconds: number } {
-  const now = Date.now();
-  const existing = requestCounts.get(ip);
-
-  if (!existing || now - existing.windowStart >= RATE_LIMIT_WINDOW_MS) {
-    requestCounts.set(ip, { count: 1, windowStart: now });
-    return { limited: false, retryAfterSeconds: 0 };
+function ensureLowQualityFlag(riskFlags: string[]): string[] {
+  if (riskFlags.includes("low_quality_generation")) {
+    return riskFlags;
   }
 
-  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
-    const retryAfterMs = Math.max(0, RATE_LIMIT_WINDOW_MS - (now - existing.windowStart));
-    return { limited: true, retryAfterSeconds: Math.ceil(retryAfterMs / 1000) };
-  }
+  return [...riskFlags, "low_quality_generation"];
+}
 
-  existing.count += 1;
-  requestCounts.set(ip, existing);
-  return { limited: false, retryAfterSeconds: 0 };
+function logSlowIfNeeded(durationMs: number, details: Record<string, unknown>) {
+  if (durationMs > SLOW_REQUEST_THRESHOLD_MS) {
+    console.warn("Slow optimize request", { optimizeDurationMs: durationMs, ...details });
+  }
+}
+
+function buildQualityRetryInstruction(goal: string | undefined, problems: string[]): string {
+  const qualityInstruction = `The previous output failed quality checks: ${problems.join(
+    "; "
+  )}. Generate a higher-quality structured output.`;
+
+  return [goal, qualityInstruction]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join("\n\n");
 }
 
 export async function POST(req: Request, ctx: RouteContext) {
-  const ip = getClientIp(req);
-  const rate = checkRateLimit(ip);
-  if (rate.limited) {
-    return NextResponse.json(
-      error("RATE_LIMITED", "Too many optimize requests", {
-        limit: RATE_LIMIT_MAX_REQUESTS,
-        windowSeconds: RATE_LIMIT_WINDOW_MS / 1000,
-        retryAfterSeconds: rate.retryAfterSeconds,
-      }),
-      { status: 429 }
-    );
-  }
+  const startedAt = Date.now();
+  const actorKey = getRequestActorKey(req);
 
   const { id } = await ctx.params;
   const parsedId = parsePromptId(id);
@@ -111,6 +125,20 @@ export async function POST(req: Request, ctx: RouteContext) {
     return NextResponse.json(
       error("VALIDATION_ERROR", "Invalid prompt id", parsedId.error.flatten()),
       { status: 400 }
+    );
+  }
+
+  const rate = optimizeRateLimiter.check(actorKey);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      error("RATE_LIMITED", "Too many optimize requests", {
+        limit: rate.limit,
+        burstLimit: 10,
+        windowSeconds: 60,
+        retryAfterSeconds: rate.retryAfterSeconds,
+        reason: rate.reason,
+      }),
+      { status: 429 }
     );
   }
 
@@ -129,12 +157,23 @@ export async function POST(req: Request, ctx: RouteContext) {
     );
   }
 
+  const sanitizedGoal = parsedBody.data.goal ? sanitizeText(parsedBody.data.goal) : undefined;
+  const optimizerMode = mapToOptimizerMode(parsedBody.data.mode);
+
   try {
     const prompt = await prisma.prompt.findUnique({
       where: { id: parsedId.data },
       select: {
         id: true,
         rawPrompt: true,
+        templateId: true,
+        template: {
+          select: {
+            id: true,
+            key: true,
+            systemPrompt: true,
+          },
+        },
       },
     });
 
@@ -142,23 +181,112 @@ export async function POST(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
     }
 
-    const optimizerMode = mapToOptimizerMode(parsedBody.data.mode);
-    const result = await optimizePrompt(prompt.rawPrompt, optimizerMode, parsedBody.data.goal);
+    const selectedPrompt = prompt as PromptSelection;
+    if (selectedPrompt.templateId && !selectedPrompt.template) {
+      return NextResponse.json(error("NOT_FOUND", "Template not found"), { status: 404 });
+    }
+
+    const sanitizedRawPrompt = sanitizeText(selectedPrompt.rawPrompt);
+    if (!sanitizedRawPrompt) {
+      return NextResponse.json(
+        error("VALIDATION_ERROR", "Prompt text is empty and cannot be optimized"),
+        { status: 400 }
+      );
+    }
+    if (sanitizedRawPrompt.length > 8000) {
+      return NextResponse.json(
+        error("VALIDATION_ERROR", "Prompt text exceeds 8000 characters"),
+        { status: 400 }
+      );
+    }
+
+    const sanitizedTemplateSystemPrompt = selectedPrompt.template?.systemPrompt
+      ? sanitizeText(selectedPrompt.template.systemPrompt)
+      : undefined;
+
+    console.info("optimize started", {
+      promptId: selectedPrompt.id,
+      mode: parsedBody.data.mode,
+      optimizerMode,
+      templateUsed: selectedPrompt.template?.key ?? null,
+      actor: actorKey,
+    });
+    console.info("template used", {
+      promptId: selectedPrompt.id,
+      templateUsed: selectedPrompt.template?.key ?? null,
+    });
+
+    const firstRun = await optimizePromptWithMeta(
+      sanitizedRawPrompt,
+      optimizerMode,
+      sanitizedGoal,
+      sanitizedTemplateSystemPrompt
+    );
+
+    let chosenRun = firstRun;
+    const firstValidation = validateOptimizeResult(firstRun.result);
+
+    if (!firstValidation.valid) {
+      console.warn("Prompt quality guard triggered", firstValidation.problems);
+      console.warn("Prompt quality guard retry executed", {
+        promptId: selectedPrompt.id,
+        templateUsed: selectedPrompt.template?.key ?? null,
+      });
+
+      try {
+        const retryRun = await optimizePromptWithMeta(
+          sanitizedRawPrompt,
+          optimizerMode,
+          buildQualityRetryInstruction(sanitizedGoal, firstValidation.problems),
+          sanitizedTemplateSystemPrompt
+        );
+
+        const retryValidation = validateOptimizeResult(retryRun.result);
+        if (!retryValidation.valid) {
+          console.warn("Prompt quality guard triggered", retryValidation.problems);
+          chosenRun = {
+            ...firstRun,
+            result: {
+              ...firstRun.result,
+              riskFlags: ensureLowQualityFlag(firstRun.result.riskFlags),
+            },
+          };
+        } else {
+          chosenRun = retryRun;
+        }
+      } catch (retryErr: unknown) {
+        console.warn("Prompt quality guard triggered", [
+          `retry_failed: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+        ]);
+        chosenRun = {
+          ...firstRun,
+          result: {
+            ...firstRun.result,
+            riskFlags: ensureLowQualityFlag(firstRun.result.riskFlags),
+          },
+        };
+      }
+    }
+
+    const calibratedResult = {
+      ...chosenRun.result,
+      scores: calibrateScores(chosenRun.result),
+    };
 
     const latestVersion = await prisma.$transaction(async (tx) => {
       const createdVersion = await tx.promptVersion.create({
         data: {
-          promptId: prompt.id,
-          optimizedPrompt: result.optimizedPrompt,
-          keyChanges: result.keyChanges,
-          scores: result.scores,
-          missingFields: result.missingFields,
-          riskFlags: result.riskFlags,
-          rawInputPrompt: prompt.rawPrompt,
+          promptId: selectedPrompt.id,
+          optimizedPrompt: calibratedResult.optimizedPrompt,
+          keyChanges: calibratedResult.keyChanges,
+          scores: calibratedResult.scores,
+          missingFields: calibratedResult.missingFields,
+          riskFlags: calibratedResult.riskFlags,
+          rawInputPrompt: selectedPrompt.rawPrompt,
           mode: parsedBody.data.mode,
-          model: MODEL_NAME,
-          tokenIn: null,
-          tokenOut: null,
+          model: chosenRun.model || FALLBACK_MODEL_NAME,
+          tokenIn: chosenRun.tokenIn,
+          tokenOut: chosenRun.tokenOut,
         },
       });
 
@@ -168,10 +296,12 @@ export async function POST(req: Request, ctx: RouteContext) {
           entityType: "PromptVersion",
           entityId: createdVersion.id,
           meta: {
-            promptId: prompt.id,
+            promptId: selectedPrompt.id,
             mode: parsedBody.data.mode,
-            goal: parsedBody.data.goal ?? null,
-            ip,
+            goal: sanitizedGoal ?? null,
+            actor: actorKey,
+            templateUsed: selectedPrompt.template?.key ?? null,
+            model: chosenRun.model || FALLBACK_MODEL_NAME,
           },
         },
       });
@@ -179,8 +309,33 @@ export async function POST(req: Request, ctx: RouteContext) {
       return createdVersion;
     });
 
+    const optimizeDurationMs = Date.now() - startedAt;
+    console.info("model used", {
+      promptId: selectedPrompt.id,
+      model: chosenRun.model || FALLBACK_MODEL_NAME,
+      tokenIn: chosenRun.tokenIn,
+      tokenOut: chosenRun.tokenOut,
+      optimizeDurationMs,
+    });
+    logSlowIfNeeded(optimizeDurationMs, {
+      promptId: selectedPrompt.id,
+      model: chosenRun.model || FALLBACK_MODEL_NAME,
+    });
+
     return NextResponse.json(success(latestVersion), { status: 201 });
   } catch (err: unknown) {
+    const optimizeDurationMs = Date.now() - startedAt;
+    console.error("LLM failure", {
+      promptId: parsedId.data,
+      mode: parsedBody.data.mode,
+      optimizeDurationMs,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    logSlowIfNeeded(optimizeDurationMs, {
+      promptId: parsedId.data,
+      failed: true,
+    });
+
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });
     }

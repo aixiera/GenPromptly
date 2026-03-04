@@ -3,7 +3,7 @@ import type { AppPage } from "../app/page";
 const menu = [
   { key: "dashboard", label: "Projects" },
   { key: "editor", label: "Prompts" },
-  { key: "templates", label: "Templates" },
+  { key: "templates", label: "Tools" },
   { key: "team", label: "Team" },
   { key: "compliance", label: "Compliance" },
 ] as const;

@@ -2,20 +2,53 @@
 
 import { useState } from "react";
 import { apiDelete, apiPost, getApiErrorMessage } from "../lib/apiClient";
+import { useDashboardSummary } from "../lib/hooks/useDashboardSummary";
 import { useProjects } from "../lib/hooks/useProjects";
 import { usePrompts } from "../lib/hooks/usePrompts";
 import type { Prompt } from "../lib/types";
 
-const stats = [
-  ["Prompts Count", "1,284", "+12%"],
-  ["Optimize Count", "3,942", "+8%"],
-  ["Compliance Pass Rate", "96.7%", "HIPAA+FINRA"],
-  ["Model Cost", "$2,390", "-6%"],
-];
-
 const LOADING_TEXT = "Loading data...";
 const EMPTY_PROJECTS_TEXT = "No projects yet.";
 const EMPTY_PROMPTS_TEXT = "No prompts yet.";
+const DEFAULT_WINDOW_DAYS = 7;
+
+function formatWholeNumber(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatPercentage(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  return `${value.toFixed(1)}%`;
+}
+
+function formatCurrency(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDelta(deltaPct: number | null | undefined, windowDays: number): string {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) {
+    return "No prior data";
+  }
+
+  const sign = deltaPct > 0 ? "+" : "";
+  return `${sign}${deltaPct.toFixed(1)}% vs prev ${windowDays}d`;
+}
 
 type DashboardProps = {
   selectedProjectId: string | null;
@@ -30,6 +63,12 @@ export function Dashboard({
   onSelectProject,
   onSelectPrompt,
 }: DashboardProps) {
+  const {
+    data: summary,
+    isLoading: isSummaryLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useDashboardSummary();
   const { data: projects, isLoading, error, refetch } = useProjects();
   const {
     data: prompts,
@@ -50,6 +89,30 @@ export function Dashboard({
   const [createPromptError, setCreatePromptError] = useState<string | null>(null);
   const [isDeletingPromptId, setIsDeletingPromptId] = useState<string | null>(null);
   const [deletePromptError, setDeletePromptError] = useState<string | null>(null);
+  const metricWindowDays = summary?.windowDays ?? DEFAULT_WINDOW_DAYS;
+
+  const stats = [
+    {
+      label: "Prompts Count",
+      value: formatWholeNumber(summary?.metrics.promptsCount.value),
+      sub: formatDelta(summary?.metrics.promptsCount.deltaPct, metricWindowDays),
+    },
+    {
+      label: "Optimize Count",
+      value: formatWholeNumber(summary?.metrics.optimizeCount.value),
+      sub: formatDelta(summary?.metrics.optimizeCount.deltaPct, metricWindowDays),
+    },
+    {
+      label: "Compliance Pass Rate",
+      value: formatPercentage(summary?.metrics.compliancePassRate.value),
+      sub: formatDelta(summary?.metrics.compliancePassRate.deltaPct, metricWindowDays),
+    },
+    {
+      label: "Model Cost",
+      value: formatCurrency(summary?.metrics.modelCostUsd.value),
+      sub: formatDelta(summary?.metrics.modelCostUsd.deltaPct, metricWindowDays),
+    },
+  ];
 
   const handleCreateProject = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -69,7 +132,7 @@ export function Dashboard({
       await apiPost("/api/projects", { name });
       setNewProjectName("");
       setCreateMessage("Project created");
-      await refetch();
+      await Promise.all([refetch(), refetchSummary()]);
     } catch (err: unknown) {
       setCreateError(getApiErrorMessage(err, "Failed to create project"));
     } finally {
@@ -109,7 +172,7 @@ export function Dashboard({
       setNewPromptTitle("");
       setNewPromptRawPrompt("");
       setCreatePromptMessage("Prompt created");
-      await refetchPrompts();
+      await Promise.all([refetchPrompts(), refetchSummary()]);
       onSelectPrompt(createdPrompt.id);
     } catch (err: unknown) {
       setCreatePromptError(getApiErrorMessage(err, "Failed to create prompt"));
@@ -132,7 +195,7 @@ export function Dashboard({
       if (selectedPromptId === promptId) {
         onSelectPrompt(null);
       }
-      await refetchPrompts();
+      await Promise.all([refetchPrompts(), refetchSummary()]);
     } catch (err: unknown) {
       setDeletePromptError(getApiErrorMessage(err, "Failed to delete prompt"));
     } finally {
@@ -144,14 +207,16 @@ export function Dashboard({
     <section className="panel">
       <h2>Dashboard</h2>
       <div className="stats-grid">
-        {stats.map(([label, value, sub]) => (
-          <article className="stat" key={label}>
-            <p>{label}</p>
-            <h3>{value}</h3>
-            <span>{sub}</span>
+        {stats.map((stat) => (
+          <article className="stat" key={stat.label}>
+            <p>{stat.label}</p>
+            <h3>{stat.value}</h3>
+            <span>{stat.sub}</span>
           </article>
         ))}
       </div>
+      {isSummaryLoading ? <p className="muted">{LOADING_TEXT}</p> : null}
+      {summaryError ? <p className="muted">{summaryError}</p> : null}
 
       <div className="table-wrap">
         <div className="row-between">

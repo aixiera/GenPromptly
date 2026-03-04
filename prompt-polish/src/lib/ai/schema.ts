@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const ScoreSchema = z.number().int().min(0).max(100);
+const ScoreSchema = z.number().min(0).max(10);
 
 export const OptimizeResultSchema = z
   .object({
