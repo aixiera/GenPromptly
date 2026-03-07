@@ -14,6 +14,8 @@ import { getRequestAuditContext, logAuditEvent } from "../../../../../lib/audit"
 import { requirePermission } from "../../../../../lib/rbac";
 import { estimateModelCostUsd, isOpenAiConfigured } from "../../../../../lib/config/runtime";
 import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../../lib/security/rateLimit";
+import { FREE_OPTIMIZE_LIMIT, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE } from "../../../../../lib/billing/constants";
+import { consumeFreeOptimizeQuotaIfAvailable, getOptimizeAccessDecision } from "../../../../../lib/billing/plan";
 import {
   DEFAULT_SKILL_KEY,
   OPTIMIZATION_PROFILES,
@@ -131,6 +133,17 @@ export async function POST(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "optimize_prompt");
     const auditCtx = getRequestAuditContext(req);
+    const optimizeAccess = await getOptimizeAccessDecision(auth.userId);
+    if (!optimizeAccess.allowOptimize) {
+      return NextResponse.json(
+        error(UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+          freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+          freeOptimizeUsed: optimizeAccess.freeOptimizeUsed,
+          freeOptimizeRemaining: optimizeAccess.freeOptimizeRemaining,
+        }),
+        { status: 402 }
+      );
+    }
     if (!isOpenAiConfigured()) {
       return NextResponse.json(error("SERVICE_UNAVAILABLE", "Optimizer is not configured yet"), { status: 503 });
     }
@@ -289,6 +302,15 @@ export async function POST(req: Request, ctx: RouteContext) {
           },
         });
 
+        if (!optimizeAccess.isPlusActive) {
+          const consumedFreeQuota = await consumeFreeOptimizeQuotaIfAvailable(auth.userId, tx);
+          if (!consumedFreeQuota) {
+            throw new HttpError(402, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+              freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+            });
+          }
+        }
+
         await logAuditEvent(tx, {
           orgId: auth.orgId,
           userId: auth.userId,
@@ -316,6 +338,10 @@ export async function POST(req: Request, ctx: RouteContext) {
             tokenIn,
             tokenOut,
             requestId,
+            billingPlan: optimizeAccess.isPlusActive ? "PLUS" : "FREE",
+            freeOptimizeUsedBefore: optimizeAccess.freeOptimizeUsed,
+            freeOptimizeRemainingBefore: optimizeAccess.freeOptimizeRemaining,
+            consumedFreeOptimize: !optimizeAccess.isPlusActive,
           },
           ...auditCtx,
         });

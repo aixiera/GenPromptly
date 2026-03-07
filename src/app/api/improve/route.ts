@@ -9,6 +9,8 @@ import { requirePermission } from "../../../lib/rbac";
 import { getRequestAuditContext, logAuditEvent } from "../../../lib/audit";
 import { estimateModelCostUsd, isOpenAiConfigured } from "../../../lib/config/runtime";
 import { enforceRateLimit, enforceRequestBodyLimit } from "../../../lib/security/rateLimit";
+import { FREE_OPTIMIZE_LIMIT, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE } from "../../../lib/billing/constants";
+import { consumeFreeOptimizeQuotaIfAvailable, getOptimizeAccessDecision } from "../../../lib/billing/plan";
 
 export const runtime = "nodejs";
 
@@ -27,6 +29,17 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     requirePermission(ctx, "optimize_prompt");
+    const optimizeAccess = await getOptimizeAccessDecision(ctx.userId);
+    if (!optimizeAccess.allowOptimize) {
+      return NextResponse.json(
+        error(UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+          freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+          freeOptimizeUsed: optimizeAccess.freeOptimizeUsed,
+          freeOptimizeRemaining: optimizeAccess.freeOptimizeRemaining,
+        }),
+        { status: 402 }
+      );
+    }
     const rateLimitDecision = await enforceRateLimit(
       req,
       "improveCostly",
@@ -89,6 +102,15 @@ export async function POST(req: Request) {
           },
         });
 
+        if (!optimizeAccess.isPlusActive) {
+          const consumedFreeQuota = await consumeFreeOptimizeQuotaIfAvailable(ctx.userId, tx);
+          if (!consumedFreeQuota) {
+            throw new HttpError(402, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+              freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+            });
+          }
+        }
+
         await logAuditEvent(tx, {
           orgId: ctx.orgId,
           userId: ctx.userId,
@@ -101,6 +123,10 @@ export async function POST(req: Request) {
             model: run.model,
             tokenIn,
             tokenOut,
+            billingPlan: optimizeAccess.isPlusActive ? "PLUS" : "FREE",
+            freeOptimizeUsedBefore: optimizeAccess.freeOptimizeUsed,
+            freeOptimizeRemainingBefore: optimizeAccess.freeOptimizeRemaining,
+            consumedFreeOptimize: !optimizeAccess.isPlusActive,
           },
           ...auditCtx,
         });

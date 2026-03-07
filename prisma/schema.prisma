@@ -19,6 +19,11 @@ enum InviteStatus {
   EXPIRED
 }
 
+enum PlanTier {
+  FREE
+  PLUS
+}
+
 model User {
   id              String       @id @default(cuid())
   clerkUserId     String       @unique
@@ -32,6 +37,7 @@ model User {
   invitesAccepted Invite[]     @relation("InviteAcceptedBy")
   auditLogs       AuditLog[]   @relation("AuditLogActor")
   usage           Usage[]
+  plan            UserPlan?
   lastActiveOrg   Organization? @relation("UserLastActiveOrg", fields: [lastActiveOrgId], references: [id], onDelete: SetNull)
 
   @@index([lastActiveOrgId])
@@ -200,6 +206,22 @@ model Template {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   prompts      Prompt[]
+}
+
+model UserPlan {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  plan                 PlanTier @default(FREE)
+  freeOptimizeUsed     Int      @default(0)
+  stripeCustomerId     String?  @unique
+  stripeSubscriptionId String?  @unique
+  subscriptionStatus   String?
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([plan])
 }
 
 model RateLimitMetricMinute {

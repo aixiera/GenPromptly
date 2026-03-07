@@ -1,31 +1,92 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { AppFooter } from "../components/AppFooter";
 
 export default async function HomePage() {
   const identity = await auth();
-  if (identity.userId) {
-    redirect("/app");
-  }
+  const isSignedIn = Boolean(identity.userId);
+  const startFreeHref = isSignedIn ? "/app" : "/sign-up";
+  const createPromptHref = isSignedIn ? "/app" : "/sign-up";
 
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "24px" }}>
-      <section className="panel" style={{ width: "100%", maxWidth: "780px" }}>
-        <h2 style={{ marginBottom: "8px" }}>GenPromptly</h2>
-        <p className="muted" style={{ marginBottom: "14px" }}>
-          Prompt operations platform by OpsForLocal.
+    <main style={{ minHeight: "100vh", padding: "24px", maxWidth: "1080px", margin: "0 auto" }}>
+      <section className="panel">
+        <p className="muted" style={{ marginBottom: "8px" }}>OpsForLocal Product</p>
+        <h1 style={{ marginBottom: "8px" }}>GenPromptly</h1>
+        <p className="muted" style={{ marginBottom: "14px", maxWidth: "760px" }}>
+          GenPromptly helps teams create, optimize, review, and ship production-grade prompts with
+          workflow-specific skill packs, compliance signals, and full auditability.
         </p>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <Link href="/sign-in" className="btn primary" style={{ textDecoration: "none" }}>
+          <Link href={startFreeHref} className="btn primary" style={{ textDecoration: "none" }}>
+            Start Free
+          </Link>
+          <Link href="/pricing" className="btn ghost" style={{ textDecoration: "none" }}>
+            View Pricing
+          </Link>
+          <Link href="/sign-in" className="btn ghost" style={{ textDecoration: "none" }}>
             Sign In
           </Link>
-          <Link href="/sign-up" className="btn ghost" style={{ textDecoration: "none" }}>
-            Create Account
+          <Link href={createPromptHref} className="btn ghost" style={{ textDecoration: "none" }}>
+            Create Prompt
           </Link>
         </div>
-        <AppFooter />
       </section>
+
+      <section className="panel">
+        <h2 style={{ marginBottom: "8px" }}>Who It Is For</h2>
+        <p className="muted" style={{ marginBottom: "8px" }}>
+          Prompt engineers, AI operations teams, growth teams, and compliance-sensitive operators
+          who need repeatable prompt quality instead of ad hoc edits.
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2 style={{ marginBottom: "8px" }}>6 Core Skills</h2>
+        <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <article className="card-block">
+            <strong>Workflow Spec</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Structure implementation-ready workflows.</p>
+          </article>
+          <article className="card-block">
+            <strong>Email Pack</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Build concise email prompts with strong CTA paths.</p>
+          </article>
+          <article className="card-block">
+            <strong>Marketing Variants</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Generate differentiated campaign prompt variants.</p>
+          </article>
+          <article className="card-block">
+            <strong>Video Script</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Improve hooks, pacing, and visual script structure.</p>
+          </article>
+          <article className="card-block">
+            <strong>Image to Prompt</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Translate image intent into high-control prompt text.</p>
+          </article>
+          <article className="card-block">
+            <strong>Compliance Review</strong>
+            <p className="muted" style={{ margin: "6px 0 0 0" }}>Identify risk flags and safer rewrite guidance.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2 style={{ marginBottom: "8px" }}>Plans</h2>
+        <p className="muted" style={{ marginBottom: "8px" }}>
+          Free: 8 successful optimizations per account. Plus: CA$10/month for ongoing optimization.
+        </p>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <Link href={startFreeHref} className="btn primary" style={{ textDecoration: "none" }}>
+            Create Free Account
+          </Link>
+          <Link href="/pricing" className="btn ghost" style={{ textDecoration: "none" }}>
+            Compare Plans
+          </Link>
+        </div>
+      </section>
+
+      <AppFooter />
     </main>
   );
 }

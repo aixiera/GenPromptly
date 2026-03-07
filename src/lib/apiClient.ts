@@ -86,6 +86,9 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
       }
       return "Too many requests. Try again in a minute.";
     }
+    if (error.code === "UPGRADE_REQUIRED") {
+      return `${error.message} Visit Pricing to upgrade.`;
+    }
     return error.message || fallback;
   }
 

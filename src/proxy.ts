@@ -1,13 +1,16 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-const isProtectedRoute = createRouteMatcher(["/app(.*)", "/classic(.*)", "/api(.*)"]);
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/pricing",
+  "/legal/privacy",
+  "/legal/terms",
+  "/privacy",
+  "/terms",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/invite(.*)",
-  "/api/templates(.*)",
+  "/api/billing/webhook",
 ]);
 
 type ProxyRateCounter = {
@@ -56,7 +59,7 @@ function consumeProxyRateToken(key: string, windowMs: number, maxRequests: numbe
 }
 
 function isPublicBurstSensitivePath(pathname: string): boolean {
-  return pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up") || pathname.startsWith("/invite");
+  return pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up");
 }
 
 export default clerkMiddleware(async (auth, req) => {
@@ -73,9 +76,11 @@ export default clerkMiddleware(async (auth, req) => {
     }
   }
 
-  if (isProtectedRoute(req) && !isPublicRoute(req)) {
-    await auth.protect();
+  if (isPublicRoute(req)) {
+    return;
   }
+
+  await auth.protect();
 });
 
 export const config = {

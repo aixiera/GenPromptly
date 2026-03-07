@@ -33,6 +33,7 @@ Optional but recommended:
 
 - `OPENAI_API_KEY` (required for optimize flows)
 - `NEXT_PUBLIC_APP_URL` (invite/export URLs)
+- Stripe billing keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLUS_PRICE_ID`) for Plus plan checkout
 
 3. Apply Prisma schema and seed:
 

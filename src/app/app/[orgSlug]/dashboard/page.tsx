@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { BillingActionButton } from "../../../../components/BillingActionButton";
 import { buildComplianceReport } from "../../../../lib/compliance";
 import prisma from "../../../../lib/db";
 import { requireOrgPageContext } from "../../../../lib/auth/orgContext";
 import { requirePermission } from "../../../../lib/rbac";
 import { PageHeader } from "../../../../components/PageHeader";
+import { FREE_OPTIMIZE_LIMIT } from "../../../../lib/billing/constants";
+import { getOrCreateUserPlan, toBillingSnapshot } from "../../../../lib/billing/plan";
 
 type DashboardPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -65,6 +68,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     activeModelsTodayRaw,
     recentAuditRows,
     complianceReport,
+    userPlan,
   ] = await Promise.all([
     prisma.project.count({
       where: { orgId: context.membership.orgId },
@@ -128,6 +132,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     buildComplianceReport(context.membership.orgId, {
       issueLimit: 500,
     }),
+    getOrCreateUserPlan(context.user.id),
   ]);
 
   const latestCheckedAt =
@@ -140,6 +145,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const usageRequestsToday = usageToday._count._all;
   const usageTokensToday = toNumber(usageToday._sum.tokenIn) + toNumber(usageToday._sum.tokenOut);
   const activeModelsToday = activeModelsTodayRaw.length;
+  const billing = toBillingSnapshot(userPlan);
 
   return (
     <section style={{ display: "grid", gap: "12px" }}>
@@ -179,6 +185,49 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
             <h3>{memberCount.toLocaleString()}</h3>
             <span>Workspace users</span>
           </article>
+        </div>
+      </section>
+
+      <section className="panel">
+        <PageHeader
+          title="Billing Snapshot"
+          description="Current account plan and remaining free optimization quota."
+          actions={(
+            <Link href={`/app/${encodedSlug}/billing`} className="btn ghost" style={{ textDecoration: "none" }}>
+              Open Billing
+            </Link>
+          )}
+        />
+        <div className="card-block" style={{ marginBottom: "10px" }}>
+          <p style={{ marginBottom: "6px" }}>
+            Plan: <strong>{billing.effectivePlan}</strong>
+          </p>
+          <p className="muted" style={{ marginBottom: "6px" }}>
+            Free usage: {billing.freeOptimizeUsed} / {FREE_OPTIMIZE_LIMIT}
+          </p>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Remaining free optimizations: {billing.freeOptimizeRemaining}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          {billing.isPlusActive ? (
+            <BillingActionButton
+              action="portal"
+              label="Manage Billing"
+              pendingLabel="Opening Portal..."
+              className="btn primary"
+            />
+          ) : (
+            <BillingActionButton
+              action="checkout"
+              label="Upgrade to Plus"
+              pendingLabel="Opening Checkout..."
+              className="btn primary"
+            />
+          )}
+          <Link href="/pricing" className="btn ghost" style={{ textDecoration: "none" }}>
+            View Pricing
+          </Link>
         </div>
       </section>
 

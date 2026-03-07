@@ -3,6 +3,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import prisma from "../db";
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from "../api/httpError";
 import { reserveOrganizationSlug } from "./organization";
+import { getOrCreateUserPlan } from "../billing/plan";
 
 type MembershipRecord = {
   id: string;
@@ -36,6 +37,10 @@ export type AuthenticatedAppUser = {
   email: string;
   name: string | null;
   lastActiveOrgId: string | null;
+};
+
+type RequireAuthenticatedUserOptions = {
+  ensureWorkspace?: boolean;
 };
 
 type ResolveAuthOptions = {
@@ -329,13 +334,20 @@ async function ensureUserHasWorkspace(user: {
   return workspace.orgId;
 }
 
-export async function requireAuthenticatedUser(): Promise<AuthenticatedAppUser> {
+export async function requireAuthenticatedUser(
+  options?: RequireAuthenticatedUserOptions
+): Promise<AuthenticatedAppUser> {
   const identity = await auth();
   if (!identity.userId) {
     throw new UnauthorizedError("Authentication required", undefined, "AUTH_REQUIRED");
   }
 
   const user = await ensureAppUser(identity.userId, identity.sessionClaims);
+  await getOrCreateUserPlan(user.id);
+  if (options?.ensureWorkspace === false) {
+    return user;
+  }
+
   const ensuredOrgId = await ensureUserHasWorkspace(user);
   if (user.lastActiveOrgId === ensuredOrgId) {
     return user;
@@ -416,6 +428,7 @@ export async function resolveAuthContext(
   }
 
   const user = await ensureAppUser(identity.userId, identity.sessionClaims);
+  await getOrCreateUserPlan(user.id);
   const ensuredOrgId = await ensureUserHasWorkspace(user);
   const fallbackOrgId = user.lastActiveOrgId ?? ensuredOrgId;
   const memberships = await prisma.membership.findMany({

@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { apiDelete, apiDownload, apiPatch, apiPost, getApiErrorMessage, triggerBrowserDownload } from "../lib/apiClient";
+import {
+  ApiRequestError,
+  apiDelete,
+  apiDownload,
+  apiPatch,
+  apiPost,
+  getApiErrorMessage,
+  triggerBrowserDownload,
+} from "../lib/apiClient";
 import type { PromptVersion } from "../lib/types";
 import {
   DEFAULT_SKILL_KEY,
@@ -284,6 +292,7 @@ export function PromptDetailPanel({
   const [optimizeGoal, setOptimizeGoal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
 
   const allSkills = useMemo(() => listSkillDefinitions(), []);
   const templateSkill = useMemo(() => getSkillByTemplateKey(templateKey), [templateKey]);
@@ -378,6 +387,7 @@ export function PromptDetailPanel({
     setIsOptimizing(true);
     setError(null);
     setMessage(null);
+    setUpgradeRequired(false);
     try {
       const createdVersion = await apiPost<PromptVersion>(
         `/api/prompts/${encodeURIComponent(prompt.id)}/optimize`,
@@ -389,8 +399,15 @@ export function PromptDetailPanel({
       );
       setVersions((prev) => [createdVersion, ...prev.filter((entry) => entry.id !== createdVersion.id)]);
       setMessage("Prompt optimized. Review the latest result and version history.");
+      setUpgradeRequired(false);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, "Failed to optimize prompt"));
+      if (err instanceof ApiRequestError && err.code === "UPGRADE_REQUIRED") {
+        setUpgradeRequired(true);
+        setError(err.message);
+      } else {
+        setUpgradeRequired(false);
+        setError(getApiErrorMessage(err, "Failed to optimize prompt"));
+      }
     } finally {
       setIsOptimizing(false);
     }
@@ -729,6 +746,25 @@ export function PromptDetailPanel({
       </section>
 
       {message ? <p className="muted" style={{ margin: 0 }}>{message}</p> : null}
+      {upgradeRequired ? (
+        <div className="card-block">
+          <p style={{ marginBottom: "6px" }}>
+            Free optimization quota is exhausted. Upgrade to continue optimizing prompts.
+          </p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <Link href="/pricing" className="btn primary" style={{ textDecoration: "none" }}>
+              Upgrade to Plus
+            </Link>
+            <Link
+              href={`/app/${encodeURIComponent(orgSlug)}/billing`}
+              className="btn ghost"
+              style={{ textDecoration: "none" }}
+            >
+              Open Billing
+            </Link>
+          </div>
+        </div>
+      ) : null}
       {error ? <p className="muted" style={{ margin: 0 }}>{error}</p> : null}
     </section>
   );

@@ -68,6 +68,13 @@ export default async function OrgLayout({ children, params }: OrgLayoutProps) {
             >
               Team
             </Link>
+            <Link
+              href={`/app/${encodeURIComponent(context.membership.orgSlug)}/billing`}
+              className="btn ghost"
+              style={{ textDecoration: "none" }}
+            >
+              Billing
+            </Link>
             <Link href="/classic" className="btn ghost" style={{ textDecoration: "none" }}>
               Legacy Classic View
             </Link>

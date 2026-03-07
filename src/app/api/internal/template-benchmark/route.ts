@@ -8,6 +8,8 @@ import { requireAuthContext } from "../../../../lib/auth/server";
 import { requirePermission } from "../../../../lib/rbac";
 import { isOpenAiConfigured } from "../../../../lib/config/runtime";
 import { enforceRateLimit } from "../../../../lib/security/rateLimit";
+import { FREE_OPTIMIZE_LIMIT, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE } from "../../../../lib/billing/constants";
+import { consumeFreeOptimizeQuotaIfAvailable, getOptimizeAccessDecision } from "../../../../lib/billing/plan";
 
 export const runtime = "nodejs";
 
@@ -84,6 +86,17 @@ export async function GET(req: Request) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "benchmark_template");
+    const optimizeAccess = await getOptimizeAccessDecision(auth.userId);
+    if (!optimizeAccess.allowOptimize) {
+      return NextResponse.json(
+        error(UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+          freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+          freeOptimizeUsed: optimizeAccess.freeOptimizeUsed,
+          freeOptimizeRemaining: optimizeAccess.freeOptimizeRemaining,
+        }),
+        { status: 402 }
+      );
+    }
     const rateLimitDecision = await enforceRateLimit(
       req,
       "internalBenchmark",
@@ -132,7 +145,18 @@ export async function GET(req: Request) {
           try {
             const result = await optimizePrompt(testInput, "clarity", undefined, templatePrompt);
             scores.push(toCompositeScore(result.scores));
+            if (!optimizeAccess.isPlusActive) {
+              const consumedFreeQuota = await consumeFreeOptimizeQuotaIfAvailable(auth.userId);
+              if (!consumedFreeQuota) {
+                throw new HttpError(402, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+                  freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+                });
+              }
+            }
           } catch (benchmarkError: unknown) {
+            if (benchmarkError instanceof HttpError && benchmarkError.code === UPGRADE_REQUIRED_CODE) {
+              throw benchmarkError;
+            }
             console.error("Template benchmark case failed", {
               templateKey,
               message: benchmarkError instanceof Error ? benchmarkError.message : String(benchmarkError),
