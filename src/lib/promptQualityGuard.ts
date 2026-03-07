@@ -11,7 +11,8 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-const STRUCTURED_SECTION_PATTERN = /\b(variables|output schema|output json schema|steps|step-by-step|script|variants)\b/i;
+const STRUCTURED_SECTION_PATTERN =
+  /\b(variables|output schema|output json schema|steps|step-by-step|script|variants|findings|recommendations|workflow spec|risk level)\b/i;
 
 export function validateOptimizeResult(result: unknown): GuardResult {
   const problems: string[] = [];
@@ -24,8 +25,8 @@ export function validateOptimizeResult(result: unknown): GuardResult {
   }
 
   const optimizedPrompt = result.optimizedPrompt;
-  if (typeof optimizedPrompt !== "string" || optimizedPrompt.trim().length < 400) {
-    problems.push("optimizedPrompt must be at least 400 characters");
+  if (typeof optimizedPrompt !== "string" || optimizedPrompt.trim().length < 220) {
+    problems.push("optimizedPrompt must be at least 220 characters");
   } else if (!STRUCTURED_SECTION_PATTERN.test(optimizedPrompt)) {
     problems.push(
       "optimizedPrompt must contain at least one structured section keyword (Variables, Output Schema, Steps, Script, Variants)"

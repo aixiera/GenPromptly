@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../lib/apiClient";
+import { apiGet, getApiErrorMessage } from "../lib/apiClient";
 import type { Template } from "../lib/types";
 
 const LOADING_TEXT = "Loading tools...";
@@ -22,7 +22,7 @@ export function Templates({ onSelectTemplate }: TemplatesProps) {
       const result = await apiGet<Template[]>("/api/templates");
       setTemplates(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch tools");
+      setError(getApiErrorMessage(err, "Unable to load tools. Check your workspace connection and retry."));
     } finally {
       setIsLoading(false);
     }
@@ -40,6 +40,9 @@ export function Templates({ onSelectTemplate }: TemplatesProps) {
           {isLoading ? "Loading..." : "Refresh"}
         </button>
       </div>
+      <p className="muted" style={{ marginBottom: "12px" }}>
+        Select a workflow skill to open prompt creation with the right template context.
+      </p>
 
       {isLoading ? <p className="muted">{LOADING_TEXT}</p> : null}
       {error ? <p className="muted">{error}</p> : null}
@@ -68,6 +71,9 @@ export function Templates({ onSelectTemplate }: TemplatesProps) {
                 {template.description}
               </p>
               <span className="chip">{template.category}</span>
+              <p className="muted" style={{ marginTop: "8px", marginBottom: 0 }}>
+                Open Workflow
+              </p>
             </button>
           ))}
         </div>
@@ -75,3 +81,5 @@ export function Templates({ onSelectTemplate }: TemplatesProps) {
     </section>
   );
 }
+
+export default Templates;

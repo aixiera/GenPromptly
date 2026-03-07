@@ -93,12 +93,12 @@ export function Dashboard({
 
   const stats = [
     {
-      label: "Prompts Count",
+      label: "Prompt Count",
       value: formatWholeNumber(summary?.metrics.promptsCount.value),
       sub: formatDelta(summary?.metrics.promptsCount.deltaPct, metricWindowDays),
     },
     {
-      label: "Optimize Count",
+      label: "Optimize Runs",
       value: formatWholeNumber(summary?.metrics.optimizeCount.value),
       sub: formatDelta(summary?.metrics.optimizeCount.deltaPct, metricWindowDays),
     },
@@ -108,7 +108,7 @@ export function Dashboard({
       sub: formatDelta(summary?.metrics.compliancePassRate.deltaPct, metricWindowDays),
     },
     {
-      label: "Model Cost",
+      label: "Model Cost (USD)",
       value: formatCurrency(summary?.metrics.modelCostUsd.value),
       sub: formatDelta(summary?.metrics.modelCostUsd.deltaPct, metricWindowDays),
     },
@@ -206,6 +206,9 @@ export function Dashboard({
   return (
     <section className="panel">
       <h2>Dashboard</h2>
+      <p className="muted" style={{ marginBottom: "10px" }}>
+        Workspace summary, projects, and prompts.
+      </p>
       <div className="stats-grid">
         {stats.map((stat) => (
           <article className="stat" key={stat.label}>
@@ -238,7 +241,7 @@ export function Dashboard({
               }}
             />
             <button type="submit" className="btn primary" disabled={isCreating}>
-              {isCreating ? "Creating..." : "Add"}
+              {isCreating ? "Creating..." : "Create Project"}
             </button>
           </form>
         </div>
@@ -272,7 +275,7 @@ export function Dashboard({
                       className="btn ghost"
                       onClick={() => onSelectProject(project.id)}
                     >
-                      {selectedProjectId === project.id ? "Selected" : "View Prompts"}
+                      {selectedProjectId === project.id ? "Selected" : "Open Prompts"}
                     </button>
                   </td>
                 </tr>
@@ -343,7 +346,7 @@ export function Dashboard({
                           className="btn ghost"
                           onClick={() => onSelectPrompt(prompt.id)}
                         >
-                          {selectedPromptId === prompt.id ? "Selected" : "Open Editor"}
+                          {selectedPromptId === prompt.id ? "Selected" : "Open Prompt"}
                         </button>
                         <button
                           type="button"
@@ -366,3 +369,5 @@ export function Dashboard({
     </section>
   );
 }
+
+export default Dashboard;

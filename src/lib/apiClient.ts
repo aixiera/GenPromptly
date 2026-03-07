@@ -14,6 +14,38 @@ type ApiError = {
 
 type ApiEnvelope<T> = ApiSuccess<T> | ApiError;
 
+const ACTIVE_ORG_STORAGE_KEY = "prompt_polish_active_org_id";
+
+function canUseStorage(): boolean {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readActiveOrgId(): string | null {
+  if (!canUseStorage()) {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+  const orgId = raw?.trim();
+  return orgId || null;
+}
+
+export function setActiveOrg(activeOrgId: string): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, activeOrgId);
+}
+
+export function clearActiveOrg(): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
+}
+
 export class ApiRequestError extends Error {
   status: number;
   code?: string;
@@ -81,11 +113,14 @@ async function parseJsonResponse(response: Response, url: string): Promise<unkno
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const activeOrgId = readActiveOrgId();
+
   const response = await fetch(url, {
     ...init,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...(activeOrgId ? { "x-org-id": activeOrgId } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -107,6 +142,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const envelope: ApiEnvelope<T> = parsed;
 
   if (envelope.ok === false) {
+    if (
+      activeOrgId &&
+      (envelope.error.code === "ORG_NOT_FOUND" || envelope.error.code === "ORG_NOT_ACCESSIBLE")
+    ) {
+      clearActiveOrg();
+      return request<T>(url, init);
+    }
+
     throw new ApiRequestError(
       envelope.error.message,
       response.status,
@@ -136,6 +179,9 @@ export async function apiPatch<T>(url: string, body: unknown): Promise<T> {
   });
 }
 
-export async function apiDelete<T>(url: string): Promise<T> {
-  return request<T>(url, { method: "DELETE" });
+export async function apiDelete<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "DELETE",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
 }

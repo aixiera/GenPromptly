@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "../../../../lib/db";
 import { optimizePrompt } from "../../../../lib/ai/optimizer";
+import { HttpError } from "../../../../lib/api/httpError";
 import { error, success } from "../../../../lib/api/response";
+import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/errorDiagnostics";
+import { requireAuthContext } from "../../../../lib/auth/server";
+import { requirePermission } from "../../../../lib/rbac";
+import { isOpenAiConfigured } from "../../../../lib/config/runtime";
 
 export const runtime = "nodejs";
 
@@ -70,12 +75,15 @@ function toCompositeScore(scores: {
   return average([scores.clarity, scores.context, scores.constraints, scores.format]);
 }
 
-export async function GET() {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json(error("INTERNAL_ERROR", "Missing OPENAI_API_KEY"), { status: 500 });
+export async function GET(req: Request) {
+  if (!isOpenAiConfigured()) {
+    return NextResponse.json(error("SERVICE_UNAVAILABLE", "Optimizer is not configured yet"), { status: 503 });
   }
 
   try {
+    const auth = await requireAuthContext(req);
+    requirePermission(auth, "benchmark_template");
+
     const templates = await prisma.template.findMany({
       where: {
         key: {
@@ -125,7 +133,17 @@ export async function GET() {
     }
 
     return NextResponse.json(success(rows), { status: 200 });
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof HttpError) {
+      return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });
+    }
+    const infraError = toInfraHttpError(err, "api.internal.template-benchmark.get");
+    if (infraError) {
+      return NextResponse.json(error(infraError.code, infraError.message, infraError.details), {
+        status: infraError.status,
+      });
+    }
+    logUnhandledApiError("api.internal.template-benchmark.get", err);
     return NextResponse.json(error("INTERNAL_ERROR", "Failed to run template benchmark"), { status: 500 });
   }
 }

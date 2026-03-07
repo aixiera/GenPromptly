@@ -1,11 +1,11 @@
-import type { AppPage } from "../app/page";
+export type AppPage = "dashboard" | "editor" | "templates" | "team" | "compliance";
 
 const menu = [
-  { key: "dashboard", label: "Projects" },
+  { key: "dashboard", label: "Dashboard" },
   { key: "editor", label: "Prompts" },
   { key: "templates", label: "Tools" },
-  { key: "team", label: "Team" },
   { key: "compliance", label: "Compliance" },
+  { key: "team", label: "Team" },
 ] as const;
 
 export function Sidebar({ active, onChange }: { active: AppPage; onChange: (page: AppPage) => void }) {

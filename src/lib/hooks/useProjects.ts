@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../apiClient";
+import { apiGet, getApiErrorMessage } from "../apiClient";
 import type { Project } from "../types";
 
 type UseProjectsResult = {
@@ -22,7 +22,7 @@ export function useProjects(): UseProjectsResult {
       const result = await apiGet<Project[]>("/api/projects");
       setData(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch projects");
+      setError(getApiErrorMessage(err, "Unable to load projects"));
     } finally {
       setIsLoading(false);
     }

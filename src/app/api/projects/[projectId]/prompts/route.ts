@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-import prisma from "../../../../../lib/db";
+import { z } from "zod";
 import { error, success } from "../../../../../lib/api/response";
-import { CreatePromptSchema } from "../../../../../lib/validation/prompt";
+import { HttpError } from "../../../../../lib/api/httpError";
+import { logUnhandledApiError, toInfraHttpError } from "../../../../../lib/api/errorDiagnostics";
+import { requireAuthContext } from "../../../../../lib/auth/server";
+import { requirePermission } from "../../../../../lib/rbac";
+import { getProjectById, listPromptsByProject } from "../../../../../lib/tenantData";
 
 export const runtime = "nodejs";
 
@@ -9,38 +13,39 @@ type RouteContext = {
   params: { projectId: string } | Promise<{ projectId: string }>;
 };
 
-function parseProjectId(projectId: string) {
-  return CreatePromptSchema.shape.projectId.safeParse(projectId);
-}
+const ProjectIdSchema = z.string().trim().min(1, "projectId is required").max(120);
 
-export async function GET(_req: Request, ctx: RouteContext) {
+export async function GET(req: Request, ctx: RouteContext) {
   const { projectId } = await ctx.params;
-  const parsedId = parseProjectId(projectId);
-
+  const parsedId = ProjectIdSchema.safeParse(projectId);
   if (!parsedId.success) {
-    return NextResponse.json(
-      error("VALIDATION_ERROR", "Invalid project id", parsedId.error.flatten()),
-      { status: 400 }
-    );
+    return NextResponse.json(error("VALIDATION_ERROR", "Invalid project id", parsedId.error.flatten()), {
+      status: 400,
+    });
   }
 
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: parsedId.data },
-      select: { id: true },
-    });
+    const auth = await requireAuthContext(req);
+    requirePermission(auth, "view_prompt");
 
+    const project = await getProjectById(auth.orgId, parsedId.data);
     if (!project) {
       return NextResponse.json(error("NOT_FOUND", "Project not found"), { status: 404 });
     }
 
-    const prompts = await prisma.prompt.findMany({
-      where: { projectId: parsedId.data },
-      orderBy: { updatedAt: "desc" },
-    });
-
+    const prompts = await listPromptsByProject(auth.orgId, parsedId.data);
     return NextResponse.json(success(prompts), { status: 200 });
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof HttpError) {
+      return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });
+    }
+    const infraError = toInfraHttpError(err, "api.projects.prompts.get");
+    if (infraError) {
+      return NextResponse.json(error(infraError.code, infraError.message, infraError.details), {
+        status: infraError.status,
+      });
+    }
+    logUnhandledApiError("api.projects.prompts.get", err);
     return NextResponse.json(error("INTERNAL_ERROR", "Failed to fetch prompts"), { status: 500 });
   }
 }

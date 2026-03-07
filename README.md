@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GenPromptly
 
-## Getting Started
+GenPromptly is a B2B SaaS prompt operations platform operated by OpsForLocal.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router (TypeScript)
+- Clerk authentication
+- Prisma + PostgreSQL
+- OpenAI optimization pipeline
+
+## Local Setup
+
+1. Install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Copy env template and fill required values:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Required minimum:
 
-## Learn More
+- `DATABASE_URL` (or `DIRECT_URL`)
+- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 
-To learn more about Next.js, take a look at the following resources:
+Optional but recommended:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `OPENAI_API_KEY` (required for optimize flows)
+- `NEXT_PUBLIC_APP_URL` (invite/export URLs)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3. Apply Prisma schema and seed:
 
-## Deploy on Vercel
+```bash
+pnpm prisma generate
+pnpm prisma migrate deploy
+pnpm db:seed
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. Run dev server:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm dev
+```
+
+## Quality Checks
+
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm build
+```
+
+## Production Notes
+
+- API routes are tenant-scoped via org membership checks.
+- Prompt optimize requests are rate-limited and audited.
+- Compliance exports and prompt exports require authenticated org access.

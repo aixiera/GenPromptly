@@ -45,8 +45,8 @@ export function PromptEditor({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [optimizeMode, setOptimizeMode] = useState<
-    "general" | "marketing" | "healthcare" | "finance" | "legal"
-  >("general");
+    "workflow" | "marketing" | "compliance" | "email" | "video" | "image"
+  >("workflow");
   const [optimizeGoal, setOptimizeGoal] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
@@ -68,7 +68,7 @@ export function PromptEditor({
     setDraftTitle(data.title);
     setDraftRawPrompt(data.rawPrompt);
     setVersions(data.versions);
-  }, [data?.id, data?.title, data?.rawPrompt, data?.versions]);
+  }, [data]);
 
   useEffect(() => {
     if (versions.length === 0) {
@@ -247,10 +247,10 @@ export function PromptEditor({
   if (!promptId) {
     return (
       <section className="panel">
-        <h2>Prompt Editor(Three Columns)</h2>
-        {selectedTemplateId ? (
-          <p className="muted">Selected tool: {selectedTemplateId}</p>
-        ) : null}
+        <h2>Prompt Workflow Editor</h2>
+        <p className="muted" style={{ marginBottom: "10px" }}>
+          Select a prompt to edit, or open a workflow from Tools.
+        </p>
         {selectedTemplateId ? (
           <button
             type="button"
@@ -259,11 +259,10 @@ export function PromptEditor({
             disabled={isCreatingFromTemplate}
             style={{ marginBottom: "10px" }}
           >
-            {isCreatingFromTemplate ? "Creating..." : "Create Prompt from Template"}
+            {isCreatingFromTemplate ? "Creating..." : "Open Workflow"}
           </button>
         ) : null}
         {createFromTemplateError ? <p className="muted">{createFromTemplateError}</p> : null}
-        <p className="muted">Select a prompt to edit.</p>
       </section>
     );
   }
@@ -271,7 +270,7 @@ export function PromptEditor({
   if (isLoading) {
     return (
       <section className="panel">
-        <h2>Prompt Editor(Three Columns)</h2>
+        <h2>Prompt Workflow Editor</h2>
         <p className="muted">{LOADING_TEXT}</p>
       </section>
     );
@@ -280,7 +279,7 @@ export function PromptEditor({
   if (error) {
     return (
       <section className="panel">
-        <h2>Prompt Editor(Three Columns)</h2>
+        <h2>Prompt Workflow Editor</h2>
         <p className="muted">{error}</p>
       </section>
     );
@@ -289,7 +288,7 @@ export function PromptEditor({
   if (!data) {
     return (
       <section className="panel">
-        <h2>Prompt Editor(Three Columns)</h2>
+        <h2>Prompt Workflow Editor</h2>
         <p className="muted">No prompt data available.</p>
       </section>
     );
@@ -307,15 +306,13 @@ export function PromptEditor({
 
   return (
     <section className="panel">
-      <h2>Prompt Editor(Three Columns)</h2>
+      <h2>Prompt Workflow Editor</h2>
       <div className="editor-grid">
         <article className="editor-col">
-          <h4>Industry Templates</h4>
-          {selectedTemplateId ? (
-            <p className="muted" style={{ marginBottom: "8px" }}>
-              Selected tool id: {selectedTemplateId}
-            </p>
-          ) : null}
+          <h4>Workflow Setup</h4>
+          <p className="muted" style={{ marginBottom: "8px" }}>
+            Selected tool templates and variables for this workflow.
+          </p>
           {selectedTemplateId ? (
             <button
               type="button"
@@ -324,11 +321,13 @@ export function PromptEditor({
               disabled={isCreatingFromTemplate}
               style={{ marginBottom: "10px" }}
             >
-              {isCreatingFromTemplate ? "Creating..." : "Create Prompt from Template"}
+              {isCreatingFromTemplate ? "Creating..." : "Open Workflow"}
             </button>
           ) : null}
           {createFromTemplateError ? <p className="muted">{createFromTemplateError}</p> : null}
-          <select><option>Healthcare - Patient Summary</option><option>Finance - Compliance Memo</option></select>
+          <p className="muted" style={{ marginBottom: "10px" }}>
+            Use the Tools page to choose one of the six core workflows.
+          </p>
           <VariablePanel />
         </article>
 
@@ -373,7 +372,7 @@ export function PromptEditor({
               onClick={handleSaveDraft}
               disabled={!hasUnsavedChanges || isSaving}
             >
-              {isSaving ? "Saving..." : "Save"}
+              {isSaving ? "Saving..." : "Save Draft"}
             </button>
           </div>
           {hasUnsavedChanges ? <p className="muted">Unsaved changes</p> : null}
@@ -406,17 +405,21 @@ export function PromptEditor({
         </article>
 
         <article className="editor-col">
-          <h4>Optimized Prompt</h4>
+          <h4>Result Panel</h4>
+          <label style={{ display: "grid", gap: "4px" }}>
+            <span className="muted">Optimization Skill</span>
           <select
             value={optimizeMode}
             onChange={(e) => setOptimizeMode(e.target.value as typeof optimizeMode)}
           >
-            <option value="general">general</option>
-            <option value="marketing">marketing</option>
-            <option value="healthcare">healthcare</option>
-            <option value="finance">finance</option>
-            <option value="legal">legal</option>
+            <option value="workflow">Workflow Spec</option>
+            <option value="marketing">Marketing Variants</option>
+            <option value="compliance">Compliance Review</option>
+            <option value="email">Email Pack</option>
+            <option value="video">Video Script</option>
+            <option value="image">Image To Prompt</option>
           </select>
+          </label>
           <input
             type="text"
             value={optimizeGoal}
@@ -437,7 +440,7 @@ export function PromptEditor({
             disabled={isOptimizing}
             style={{ marginBottom: "10px" }}
           >
-            {isOptimizing ? "Optimizing..." : "Optimize"}
+            {isOptimizing ? "Optimizing..." : "Optimize Prompt"}
           </button>
           <p className="muted" style={{ marginTop: "-2px", marginBottom: "10px" }}>
             Shortcut: Ctrl/Cmd + Enter
@@ -474,7 +477,7 @@ export function PromptEditor({
               {copyPromptFeedback ? <p className="muted">{copyPromptFeedback}</p> : null}
               {copyJsonFeedback ? <p className="muted">{copyJsonFeedback}</p> : null}
               <div className="card-block result-panel" style={{ marginBottom: "10px" }}>
-                <h4>Result Panel</h4>
+                <h4>Structured Result</h4>
                 <p><strong>optimizedPrompt</strong></p>
                 <p className="muted result-wrap-text">{selectedVersion.optimizedPrompt}</p>
                 <p><strong>keyChanges</strong></p>
@@ -528,3 +531,5 @@ export function PromptEditor({
     </section>
   );
 }
+
+export default PromptEditor;

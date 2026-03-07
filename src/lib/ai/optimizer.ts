@@ -2,41 +2,98 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { InternalError } from "../api/httpError";
 import { OptimizeResultSchema, type OptimizeResult } from "./schema";
+import { getLlmTimeoutMs } from "../config/runtime";
+import {
+  OPTIMIZATION_PROFILES,
+  type OptimizationProfile,
+  type ToolWorkflow,
+} from "../tools/toolRegistry";
 
 const OptimizeInputSchema = z
   .object({
     rawPrompt: z.string().trim().min(1, "rawPrompt is required").max(8000, "rawPrompt is too long"),
-    mode: z.enum(["clarity", "structure", "detail"]),
+    mode: z.enum(OPTIMIZATION_PROFILES),
     goal: z.string().trim().min(1, "goal cannot be empty").max(1200, "goal is too long").optional(),
   })
   .strict();
 
 export type OptimizeMode = z.infer<typeof OptimizeInputSchema>["mode"];
+export type StructuredOptimizeResult = OptimizeResult & {
+  recommendations: string[];
+  structure: Record<string, unknown>;
+  structuredData: Record<string, unknown>;
+  skillKey?: string;
+  toolKey?: string;
+  workflowProfile?: string;
+};
+
+type OptimizeRunOptions = {
+  templateSystemPrompt?: string;
+  workflow?: ToolWorkflow | null;
+};
+
 export type OptimizePromptRun = {
-  result: OptimizeResult;
+  result: StructuredOptimizeResult;
   tokenIn: number | null;
   tokenOut: number | null;
   model: string;
 };
 
-const MODE_TO_INSTRUCTIONS: Record<OptimizeMode, string> = {
+const MODE_TO_INSTRUCTIONS: Record<OptimizationProfile, string> = {
+  compliance:
+    "Prioritize policy and risk detection, mitigation guidance, and compliant rewrites with transparent assumptions.",
+  image:
+    "Prioritize concrete visual detail, composition control, lighting specificity, and reusable prompt quality.",
+  video:
+    "Prioritize hook quality, pacing, narrative flow, segment structure, and clear call-to-action execution.",
+  marketing:
+    "Prioritize differentiated campaign angles, channel fit, persuasive clarity, and brand-safe messaging.",
+  email:
+    "Prioritize recipient fit, tone control, concise structure, subject quality, and actionable CTA clarity.",
+  workflow:
+    "Prioritize implementation-ready workflow structure with explicit inputs, outputs, constraints, and validation.",
+  general:
+    "Prioritize clear, practical prompt improvements with unambiguous instructions and strong formatting.",
   clarity:
     "Improve clarity by removing ambiguity, tightening wording, and making requirements explicit.",
   structure:
     "Restructure the prompt into clear sections: Goal, Context, Requirements, Constraints, Output Format.",
   detail:
     "Increase useful detail by adding missing context and concrete constraints while preserving intent.",
+  healthcare:
+    "Apply conservative risk handling for healthcare-sensitive wording and require safe constraints.",
+  finance:
+    "Apply conservative risk handling for financial-sensitive wording and require defensible claims.",
+  legal:
+    "Apply conservative risk handling for legal-sensitive wording and avoid legal certainty or legal advice.",
 };
 
-const OPTIMIZE_RESULT_JSON_SCHEMA = {
+const DEFAULT_OPTIMIZE_RESULT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["optimizedPrompt", "keyChanges", "scores", "missingFields", "riskFlags"],
+  required: [
+    "optimizedPrompt",
+    "keyChanges",
+    "recommendations",
+    "structure",
+    "scores",
+    "missingFields",
+    "riskFlags",
+    "structuredData",
+  ],
   properties: {
     optimizedPrompt: { type: "string" },
     keyChanges: {
       type: "array",
       items: { type: "string" },
+    },
+    recommendations: {
+      type: "array",
+      items: { type: "string" },
+    },
+    structure: {
+      type: "object",
+      additionalProperties: true,
     },
     scores: {
       type: "object",
@@ -57,6 +114,10 @@ const OPTIMIZE_RESULT_JSON_SCHEMA = {
       type: "array",
       items: { type: "string" },
     },
+    structuredData: {
+      type: "object",
+      additionalProperties: true,
+    },
   },
 } as const;
 
@@ -69,14 +130,23 @@ function createClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-function buildInstructions(mode: OptimizeMode, goal?: string): string {
-  const lines = [
-    "You are a prompt optimizer.",
+function buildInstructions(mode: OptimizeMode, goal?: string, workflow?: ToolWorkflow | null): string {
+  const lines = workflow
+    ? [
+        workflow.kernelPrompt,
+        `Skill identity: ${workflow.skillKey}.`,
+        `Workflow purpose: ${workflow.workflowPurpose}.`,
+        `Expected sections: ${workflow.defaultSections.join(", ")}.`,
+      ]
+    : ["You are a prompt optimizer."];
+
+  lines.push(
     MODE_TO_INSTRUCTIONS[mode],
     "Preserve the original intent.",
     "Scores must be realistic and use a 0 to 10 scale.",
     "Return JSON only. No markdown, prose, or code fences.",
-  ];
+    "Follow the provided JSON schema exactly."
+  );
 
   if (goal) {
     lines.push(`Primary optimization goal: ${goal}`);
@@ -87,9 +157,21 @@ function buildInstructions(mode: OptimizeMode, goal?: string): string {
 
 function buildTemplateInstructions(templateSystemPrompt: string): string {
   return [
-    "Template system prompt (follow this template context while optimizing):",
+    "Template context (reference only; skill contract and output schema take precedence):",
     templateSystemPrompt,
   ].join("\n");
+}
+
+function resolveRunOptions(templateSystemPromptOrOptions?: string | OptimizeRunOptions): OptimizeRunOptions {
+  if (!templateSystemPromptOrOptions) {
+    return {};
+  }
+
+  if (typeof templateSystemPromptOrOptions === "string") {
+    return { templateSystemPrompt: templateSystemPromptOrOptions };
+  }
+
+  return templateSystemPromptOrOptions;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -113,7 +195,72 @@ function countMatches(text: string, pattern: RegExp): number {
   return [...text.matchAll(pattern)].length;
 }
 
-function estimateHeuristicScores(result: OptimizeResult): OptimizeResult["scores"] {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function toUnknownRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return value;
+}
+
+function normalizeStructuredResult(
+  candidate: unknown,
+  workflow?: ToolWorkflow | null
+): StructuredOptimizeResult {
+  if (!isRecord(candidate)) {
+    throw new Error("Model output is not an object");
+  }
+
+  const basePayload = {
+    optimizedPrompt: candidate.optimizedPrompt,
+    keyChanges: candidate.keyChanges,
+    scores: candidate.scores,
+    missingFields: candidate.missingFields,
+    riskFlags: candidate.riskFlags,
+  };
+  const parsedBase = OptimizeResultSchema.safeParse(basePayload);
+  if (!parsedBase.success) {
+    throw new Error("Model output failed base result validation");
+  }
+
+  const recommendations = toStringArray(candidate.recommendations).slice(0, 20);
+  const structure = toUnknownRecord(candidate.structure);
+  const structuredData = toUnknownRecord(candidate.structuredData);
+
+  if (workflow) {
+    const missingContractKeys = workflow.requiredStructuredDataFields.filter(
+      (field) => structuredData[field] === undefined
+    );
+    if (missingContractKeys.length > 0) {
+      throw new Error(`Structured output missing required fields: ${missingContractKeys.join(", ")}`);
+    }
+  }
+
+  return {
+    ...parsedBase.data,
+    recommendations,
+    structure,
+    structuredData,
+    skillKey: workflow?.skillKey,
+    toolKey: workflow?.toolKey,
+    workflowProfile: workflow?.workflowProfile,
+  };
+}
+
+function estimateHeuristicScores(result: StructuredOptimizeResult): StructuredOptimizeResult["scores"] {
   const text = result.optimizedPrompt;
   const lines = text
     .split("\n")
@@ -173,7 +320,7 @@ function estimateHeuristicScores(result: OptimizeResult): OptimizeResult["scores
   };
 }
 
-function normalizeAndRescore(result: OptimizeResult): OptimizeResult {
+function normalizeAndRescore(result: StructuredOptimizeResult): StructuredOptimizeResult {
   const heuristic = estimateHeuristicScores(result);
   const modelScores = {
     clarity: normalizeScoreOutOfTen(result.scores.clarity),
@@ -201,30 +348,49 @@ async function requestStructuredResult(
   rawPrompt: string,
   mode: OptimizeMode,
   goal?: string,
-  templateSystemPrompt?: string
+  templateSystemPrompt?: string,
+  workflow?: ToolWorkflow | null
 ): Promise<{
   candidate: unknown;
   tokenIn: number | null;
   tokenOut: number | null;
   model: string;
 }> {
+  const baseInstructions = buildInstructions(mode, goal, workflow);
   const instructions = templateSystemPrompt
-    ? [buildTemplateInstructions(templateSystemPrompt), buildInstructions(mode, goal)].join("\n\n")
-    : buildInstructions(mode, goal);
+    ? [baseInstructions, buildTemplateInstructions(templateSystemPrompt)].join("\n\n")
+    : baseInstructions;
+  const resultSchema = workflow?.outputSchema ?? DEFAULT_OPTIMIZE_RESULT_JSON_SCHEMA;
 
-  const response = await client.responses.create({
-    model: "gpt-4.1-mini",
-    input: rawPrompt,
-    instructions,
-    temperature: 0.2,
-    text: {
-      format: {
-        type: "json_schema",
-        name: "optimize_result",
-        strict: true,
-        schema: OPTIMIZE_RESULT_JSON_SCHEMA,
-      },
-    },
+  const timeoutMs = getLlmTimeoutMs();
+  const response = await new Promise<OpenAI.Responses.Response>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`LLM request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    client.responses
+      .create({
+        model: "gpt-4.1-mini",
+        input: rawPrompt,
+        instructions,
+        temperature: 0.2,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "optimize_result",
+            strict: true,
+            schema: resultSchema as Record<string, unknown>,
+          },
+        },
+      })
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
   });
 
   const outputText = response.output_text?.trim();
@@ -258,8 +424,9 @@ export async function optimizePromptWithMeta(
   rawPrompt: string,
   mode: string,
   goal?: string,
-  templateSystemPrompt?: string
+  templateSystemPromptOrOptions?: string | OptimizeRunOptions
 ): Promise<OptimizePromptRun> {
+  const options = resolveRunOptions(templateSystemPromptOrOptions);
   const parsedInput = OptimizeInputSchema.safeParse({ rawPrompt, mode, goal });
   if (!parsedInput.success) {
     throw new InternalError("Invalid optimizer input", parsedInput.error.flatten(), "INVALID_OPTIMIZER_INPUT");
@@ -278,25 +445,16 @@ export async function optimizePromptWithMeta(
           parsedInput.data.rawPrompt,
           parsedInput.data.mode,
           goalVariant,
-          templateSystemPrompt
+          options.templateSystemPrompt,
+          options.workflow
         );
 
-        const parsedOutput = OptimizeResultSchema.safeParse(response.candidate);
-        if (parsedOutput.success) {
-          return {
-            result: normalizeAndRescore(parsedOutput.data),
-            tokenIn: response.tokenIn,
-            tokenOut: response.tokenOut,
-            model: response.model,
-          };
-        }
-
-        lastFailure = {
-          goalUsed: goalVariant !== undefined,
+        const normalizedResult = normalizeStructuredResult(response.candidate, options.workflow);
+        return {
+          result: normalizeAndRescore(normalizedResult),
           tokenIn: response.tokenIn,
           tokenOut: response.tokenOut,
           model: response.model,
-          reason: parsedOutput.error.flatten(),
         };
       } catch (err: unknown) {
         lastFailure = {
@@ -318,8 +476,8 @@ export async function optimizePrompt(
   rawPrompt: string,
   mode: string,
   goal?: string,
-  templateSystemPrompt?: string
-): Promise<OptimizeResult> {
-  const run = await optimizePromptWithMeta(rawPrompt, mode, goal, templateSystemPrompt);
+  templateSystemPromptOrOptions?: string | OptimizeRunOptions
+): Promise<StructuredOptimizeResult> {
+  const run = await optimizePromptWithMeta(rawPrompt, mode, goal, templateSystemPromptOrOptions);
   return run.result;
 }
