@@ -7,6 +7,7 @@ import { requireAuthContextWithoutOrg } from "../../../../../../lib/auth/server"
 import { requirePermission } from "../../../../../../lib/rbac";
 import { InviteIdSchema, OrganizationSlugSchema } from "../../../../../../lib/validation/team";
 import { getRequestAuditContext, logAuditEvent } from "../../../../../../lib/audit";
+import { enforceRateLimit } from "../../../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,19 @@ export async function DELETE(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "invite_member");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "inviteRevoke",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: "revoke",
+      },
+      "api.orgs.invites.revoke.delete"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const invite = await prisma.invite.findFirst({
       where: {

@@ -61,3 +61,4 @@ pnpm build
 - API routes are tenant-scoped via org membership checks.
 - Prompt optimize requests are rate-limited and audited.
 - Compliance exports and prompt exports require authenticated org access.
+- Rate limits use Upstash Redis when configured (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) and fall back to in-memory limits for local/dev or backend outages.

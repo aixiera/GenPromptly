@@ -1,4 +1,6 @@
 import { ComplianceBadge } from "../components/ComplianceBadge";
+import { useState } from "react";
+import { apiDownload, getApiErrorMessage, triggerBrowserDownload } from "../lib/apiClient";
 import type { ComplianceReport } from "../lib/compliance/types";
 
 type ComplianceProps = {
@@ -24,18 +26,37 @@ function formatDateTime(value: string): string {
 }
 
 export function Compliance({ report, orgSlug, isLoading, error, onRetry }: ComplianceProps) {
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const riskWidth = report ? Math.min(100, Math.max(0, report.risk.score)) : 0;
   const changeLog = report?.changeLog.slice(0, 10) ?? [];
   const exportHref = orgSlug ? `/api/orgs/${encodeURIComponent(orgSlug)}/compliance/export?format=csv` : null;
+
+  const handleExport = async () => {
+    if (!exportHref) {
+      return;
+    }
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await apiDownload(exportHref);
+      const defaultName = `compliance-${orgSlug ?? "workspace"}.csv`;
+      triggerBrowserDownload(blob, filename ?? defaultName);
+    } catch (err: unknown) {
+      setExportError(getApiErrorMessage(err, "Failed to export report"));
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <section className="panel">
       <div className="row-between">
         <h2>Compliance & Audit Logs</h2>
         {exportHref ? (
-          <a className="btn primary" href={exportHref}>
-            Export Report
-          </a>
+          <button type="button" className="btn primary" onClick={() => { void handleExport(); }} disabled={isExporting}>
+            {isExporting ? "Exporting..." : "Export Report"}
+          </button>
         ) : (
           <button className="btn primary" disabled>
             Export Report
@@ -75,6 +96,11 @@ export function Compliance({ report, orgSlug, isLoading, error, onRetry }: Compl
             Retry
           </button>
         </div>
+      ) : null}
+      {exportError ? (
+        <p className="muted" style={{ marginBottom: "10px" }}>
+          {exportError}
+        </p>
       ) : null}
 
       {report && changeLog.length === 0 ? (

@@ -5,6 +5,7 @@ import { logUnhandledApiError, toInfraHttpError } from "../../../../../lib/api/e
 import { requireAuthContextWithoutOrg } from "../../../../../lib/auth/server";
 import { requirePermission } from "../../../../../lib/rbac";
 import { OrganizationSlugSchema } from "../../../../../lib/validation/team";
+import { enforceRateLimit } from "../../../../../lib/security/rateLimit";
 import {
   buildComplianceReport,
   parseComplianceFramework,
@@ -28,6 +29,9 @@ function parseRequestedFramework(url: URL): ComplianceFramework | null {
   const raw = url.searchParams.get("framework");
   if (!raw) {
     return null;
+  }
+  if (raw.length > 30) {
+    throw new HttpError(400, "VALIDATION_ERROR", "Framework filter is too long");
   }
 
   const parsed = parseComplianceFramework(raw);
@@ -53,8 +57,21 @@ export async function GET(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "view_project");
-
     const framework = parseRequestedFramework(new URL(req.url));
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "complianceRead",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: framework ?? "all",
+      },
+      "api.orgs.compliance.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+
     const report = await buildComplianceReport(orgMembership.org.id, { framework });
 
     return NextResponse.json(success(report), { status: 200 });

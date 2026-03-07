@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { apiDelete, apiPatch, apiPost, getApiErrorMessage } from "../lib/apiClient";
+import { apiDelete, apiDownload, apiPatch, apiPost, getApiErrorMessage, triggerBrowserDownload } from "../lib/apiClient";
 import type { PromptVersion } from "../lib/types";
 import {
   DEFAULT_SKILL_KEY,
@@ -280,6 +280,7 @@ export function PromptDetailPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [optimizeGoal, setOptimizeGoal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -419,6 +420,26 @@ export function PromptDetailPanel({
     }
   };
 
+  const handleExport = async () => {
+    if (!canExport) {
+      setError("Your role cannot export prompts.");
+      return;
+    }
+
+    setIsExporting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { blob, filename } = await apiDownload(`/api/prompts/${encodeURIComponent(prompt.id)}/export`);
+      triggerBrowserDownload(blob, filename ?? `prompt-${prompt.id}.json`);
+      setMessage("Prompt export started.");
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, "Failed to export prompt"));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <section style={{ display: "grid", gap: "12px" }}>
       <section className="panel">
@@ -452,9 +473,16 @@ export function PromptDetailPanel({
               Open Audit Log
             </Link>
             {canExport ? (
-              <a className="btn ghost" href={`/api/prompts/${encodeURIComponent(prompt.id)}/export`}>
-                Export Prompt
-              </a>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  void handleExport();
+                }}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export Prompt"}
+              </button>
             ) : (
               <button type="button" className="btn ghost" disabled title="Your role cannot export prompts.">
                 Export Prompt

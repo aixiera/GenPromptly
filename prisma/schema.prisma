@@ -201,3 +201,34 @@ model Template {
   updatedAt    DateTime @updatedAt
   prompts      Prompt[]
 }
+
+model RateLimitMetricMinute {
+  id                      String   @id @default(cuid())
+  minuteBucket            DateTime
+  policy                  String
+  bucket                  String
+  route                   String
+  scope                   String
+  eventType               String
+  actionKey               String
+  orgKey                  String
+  userKey                 String
+  ipHash                  String
+  backend                 String
+  source                  String
+  count                   Int      @default(0)
+  latestRetryAfterSeconds Int?
+  windowSeconds           Int?
+  maxRequests             Int?
+  metadata                Json?
+  firstSeenAt             DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([minuteBucket, policy, route, scope, eventType, actionKey, orgKey, userKey, ipHash])
+  @@index([minuteBucket])
+  @@index([policy, minuteBucket])
+  @@index([bucket, minuteBucket])
+  @@index([route, minuteBucket])
+  @@index([orgKey, minuteBucket])
+  @@index([userKey, minuteBucket])
+}

@@ -5,6 +5,7 @@ import { error, success } from "../../../lib/api/response";
 import { logUnhandledApiError, toInfraHttpError } from "../../../lib/api/errorDiagnostics";
 import { requireAuthContext } from "../../../lib/auth/server";
 import { requirePermission } from "../../../lib/rbac";
+import { enforceRateLimit } from "../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,19 @@ export async function GET(req: Request) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "view_template");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "list-templates",
+      },
+      "api.templates.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const templates = await prisma.template.findMany({
       orderBy: { updatedAt: "desc" },

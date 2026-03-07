@@ -9,11 +9,11 @@ import { requireAuthContext } from "../../../../../lib/auth/server";
 import { optimizePromptWithMeta } from "../../../../../lib/ai/optimizer";
 import { validateOptimizeResult } from "../../../../../lib/promptQualityGuard";
 import { calibrateScores } from "../../../../../lib/promptScoreCalibration";
-import { optimizeRateLimiter } from "../../../../../lib/rateLimit";
 import { getPromptForOptimize } from "../../../../../lib/tenantData";
 import { getRequestAuditContext, logAuditEvent } from "../../../../../lib/audit";
 import { requirePermission } from "../../../../../lib/rbac";
 import { estimateModelCostUsd, isOpenAiConfigured } from "../../../../../lib/config/runtime";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../../lib/security/rateLimit";
 import {
   DEFAULT_SKILL_KEY,
   OPTIMIZATION_PROFILES,
@@ -106,6 +106,10 @@ export async function POST(req: Request, ctx: RouteContext) {
       status: 400,
     });
   }
+  const bodyTooLarge = enforceRequestBodyLimit(req, 64_000, "api.prompts.optimize.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
 
   let payload: unknown;
   try {
@@ -130,93 +134,104 @@ export async function POST(req: Request, ctx: RouteContext) {
     if (!isOpenAiConfigured()) {
       return NextResponse.json(error("SERVICE_UNAVAILABLE", "Optimizer is not configured yet"), { status: 503 });
     }
-
-    const rate = optimizeRateLimiter.check(auth.actorKey);
-    if (!rate.allowed) {
-      return NextResponse.json(
-        error("RATE_LIMITED", "Too many optimize requests", {
-          limit: rate.limit,
-          burstLimit: 10,
-          windowSeconds: 60,
-          retryAfterSeconds: rate.retryAfterSeconds,
-          reason: rate.reason,
-        }),
-        { status: 429 }
-      );
-    }
-
-    const prompt = await getPromptForOptimize(auth.orgId, parsedId.data);
-    if (!prompt) {
-      return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
-    }
-
-    if (prompt.templateId && !prompt.template) {
-      return NextResponse.json(error("NOT_FOUND", "Template not found"), { status: 404 });
-    }
-
-    const sanitizedRawPrompt = sanitizeText(prompt.rawPrompt);
-    if (!sanitizedRawPrompt) {
-      return NextResponse.json(error("VALIDATION_ERROR", "Prompt text is empty and cannot be optimized"), {
-        status: 400,
-      });
-    }
-    if (sanitizedRawPrompt.length > 8000) {
-      return NextResponse.json(error("VALIDATION_ERROR", "Prompt text exceeds 8000 characters"), {
-        status: 400,
-      });
-    }
-
-    const templateSystemPrompt = prompt.template?.systemPrompt
-      ? sanitizeText(prompt.template.systemPrompt)
-      : undefined;
-
-    const explicitSkillKey = parsedBody.data.skillKey ?? mapLegacyModeToSkillKey(parsedBody.data.mode ?? null);
-    const workflow = resolveToolWorkflow({
-      skillKey: explicitSkillKey,
-      templateKey: prompt.template?.key ?? null,
-      profile: parsedBody.data.mode ?? null,
-    });
-    const fallbackWorkflow = getSkillDefinition(DEFAULT_SKILL_KEY);
-    const resolvedWorkflow = workflow ?? fallbackWorkflow;
-    if (!resolvedWorkflow) {
-      return NextResponse.json(error("INTERNAL_ERROR", "No skill workflow is configured"), { status: 500 });
-    }
-    if (parsedBody.data.mode && parsedBody.data.mode !== resolvedWorkflow.defaultOptimizationProfile) {
-      console.warn("Optimize request mode remapped to workflow default profile", {
-        requestedMode: parsedBody.data.mode,
-        resolvedMode: resolvedWorkflow.defaultOptimizationProfile,
-        skillKey: resolvedWorkflow.skillKey,
-      });
-    }
-    const optimizerMode = resolvedWorkflow.defaultOptimizationProfile;
-
-    const firstRun = await optimizePromptWithMeta(
-      sanitizedRawPrompt,
-      optimizerMode,
-      sanitizedGoal,
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "optimizeCostly",
       {
-        templateSystemPrompt,
-        workflow: resolvedWorkflow,
-      }
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: parsedBody.data.skillKey ?? parsedBody.data.mode ?? "optimize",
+      },
+      "api.prompts.optimize.post"
     );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+    try {
 
-    let chosenRun = firstRun;
-    const firstValidation = validateOptimizeResult(firstRun.result);
+      const prompt = await getPromptForOptimize(auth.orgId, parsedId.data);
+      if (!prompt) {
+        return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
+      }
 
-    if (!firstValidation.valid) {
-      try {
-        const retryRun = await optimizePromptWithMeta(
-          sanitizedRawPrompt,
-          optimizerMode,
-          buildQualityRetryInstruction(sanitizedGoal, firstValidation.problems),
-          {
-            templateSystemPrompt,
-            workflow: resolvedWorkflow,
+      if (prompt.templateId && !prompt.template) {
+        return NextResponse.json(error("NOT_FOUND", "Template not found"), { status: 404 });
+      }
+
+      const sanitizedRawPrompt = sanitizeText(prompt.rawPrompt);
+      if (!sanitizedRawPrompt) {
+        return NextResponse.json(error("VALIDATION_ERROR", "Prompt text is empty and cannot be optimized"), {
+          status: 400,
+        });
+      }
+      if (sanitizedRawPrompt.length > 8000) {
+        return NextResponse.json(error("VALIDATION_ERROR", "Prompt text exceeds 8000 characters"), {
+          status: 400,
+        });
+      }
+
+      const templateSystemPrompt = prompt.template?.systemPrompt
+        ? sanitizeText(prompt.template.systemPrompt)
+        : undefined;
+
+      const explicitSkillKey = parsedBody.data.skillKey ?? mapLegacyModeToSkillKey(parsedBody.data.mode ?? null);
+      const workflow = resolveToolWorkflow({
+        skillKey: explicitSkillKey,
+        templateKey: prompt.template?.key ?? null,
+        profile: parsedBody.data.mode ?? null,
+      });
+      const fallbackWorkflow = getSkillDefinition(DEFAULT_SKILL_KEY);
+      const resolvedWorkflow = workflow ?? fallbackWorkflow;
+      if (!resolvedWorkflow) {
+        return NextResponse.json(error("INTERNAL_ERROR", "No skill workflow is configured"), { status: 500 });
+      }
+      if (parsedBody.data.mode && parsedBody.data.mode !== resolvedWorkflow.defaultOptimizationProfile) {
+        console.warn("Optimize request mode remapped to workflow default profile", {
+          requestedMode: parsedBody.data.mode,
+          resolvedMode: resolvedWorkflow.defaultOptimizationProfile,
+          skillKey: resolvedWorkflow.skillKey,
+        });
+      }
+      const optimizerMode = resolvedWorkflow.defaultOptimizationProfile;
+
+      const firstRun = await optimizePromptWithMeta(
+        sanitizedRawPrompt,
+        optimizerMode,
+        sanitizedGoal,
+        {
+          templateSystemPrompt,
+          workflow: resolvedWorkflow,
+        }
+      );
+
+      let chosenRun = firstRun;
+      const firstValidation = validateOptimizeResult(firstRun.result);
+
+      if (!firstValidation.valid) {
+        try {
+          const retryRun = await optimizePromptWithMeta(
+            sanitizedRawPrompt,
+            optimizerMode,
+            buildQualityRetryInstruction(sanitizedGoal, firstValidation.problems),
+            {
+              templateSystemPrompt,
+              workflow: resolvedWorkflow,
+            }
+          );
+
+          const retryValidation = validateOptimizeResult(retryRun.result);
+          if (!retryValidation.valid) {
+            chosenRun = {
+              ...firstRun,
+              result: {
+                ...firstRun.result,
+                riskFlags: ensureLowQualityFlag(firstRun.result.riskFlags),
+              },
+            };
+          } else {
+            chosenRun = retryRun;
           }
-        );
-
-        const retryValidation = validateOptimizeResult(retryRun.result);
-        if (!retryValidation.valid) {
+        } catch {
           chosenRun = {
             ...firstRun,
             result: {
@@ -224,120 +239,112 @@ export async function POST(req: Request, ctx: RouteContext) {
               riskFlags: ensureLowQualityFlag(firstRun.result.riskFlags),
             },
           };
-        } else {
-          chosenRun = retryRun;
         }
-      } catch {
-        chosenRun = {
-          ...firstRun,
-          result: {
-            ...firstRun.result,
-            riskFlags: ensureLowQualityFlag(firstRun.result.riskFlags),
-          },
-        };
       }
-    }
 
-    const calibratedResult = {
-      ...chosenRun.result,
-      scores: calibrateScores(chosenRun.result),
-    };
-    const recommendations = toStringArray(chosenRun.result.recommendations).slice(0, 20);
-    const structure = toRecord(chosenRun.result.structure);
-    const structuredData = toRecord(chosenRun.result.structuredData);
-    const skillKey = resolvedWorkflow.skillKey;
-    const toolKey = resolvedWorkflow.toolKey;
-    const workflowProfile = resolvedWorkflow.workflowProfile;
+      const calibratedResult = {
+        ...chosenRun.result,
+        scores: calibrateScores(chosenRun.result),
+      };
+      const recommendations = toStringArray(chosenRun.result.recommendations).slice(0, 20);
+      const structure = toRecord(chosenRun.result.structure);
+      const structuredData = toRecord(chosenRun.result.structuredData);
+      const skillKey = resolvedWorkflow.skillKey;
+      const toolKey = resolvedWorkflow.toolKey;
+      const workflowProfile = resolvedWorkflow.workflowProfile;
 
-    const tokenIn = toCount(chosenRun.tokenIn);
-    const tokenOut = toCount(chosenRun.tokenOut);
-    const requestId = crypto.randomUUID();
-    const modelName = chosenRun.model || FALLBACK_MODEL_NAME;
+      const tokenIn = toCount(chosenRun.tokenIn);
+      const tokenOut = toCount(chosenRun.tokenOut);
+      const requestId = crypto.randomUUID();
+      const modelName = chosenRun.model || FALLBACK_MODEL_NAME;
 
-    const latestVersion = await prisma.$transaction(async (tx) => {
-      const createdVersion = await tx.promptVersion.create({
-        data: {
-          promptId: prompt.id,
-          orgId: auth.orgId,
-          optimizedPrompt: calibratedResult.optimizedPrompt,
-          keyChanges: calibratedResult.keyChanges,
-          scores: calibratedResult.scores,
-          missingFields: calibratedResult.missingFields,
-          riskFlags: calibratedResult.riskFlags,
-          rawInputPrompt: prompt.rawPrompt,
-          mode: optimizerMode,
-          model: modelName,
-          tokenIn,
-          tokenOut,
-        },
-      });
+      const latestVersion = await prisma.$transaction(async (tx) => {
+        const createdVersion = await tx.promptVersion.create({
+          data: {
+            promptId: prompt.id,
+            orgId: auth.orgId,
+            optimizedPrompt: calibratedResult.optimizedPrompt,
+            keyChanges: calibratedResult.keyChanges,
+            scores: calibratedResult.scores,
+            missingFields: calibratedResult.missingFields,
+            riskFlags: calibratedResult.riskFlags,
+            rawInputPrompt: prompt.rawPrompt,
+            mode: optimizerMode,
+            model: modelName,
+            tokenIn,
+            tokenOut,
+          },
+        });
 
-      const usage = await tx.usage.create({
-        data: {
+        const usage = await tx.usage.create({
+          data: {
+            orgId: auth.orgId,
+            userId: auth.userId,
+            model: modelName,
+            tokenIn,
+            tokenOut,
+            costUsd: estimateModelCostUsd(tokenIn, tokenOut),
+            requestId,
+            templateName: resolvedWorkflow.templateKey,
+          },
+        });
+
+        await logAuditEvent(tx, {
           orgId: auth.orgId,
           userId: auth.userId,
-          model: modelName,
-          tokenIn,
-          tokenOut,
-          costUsd: estimateModelCostUsd(tokenIn, tokenOut),
-          requestId,
-          templateName: resolvedWorkflow.templateKey,
-        },
+          action: "OPTIMIZE_PROMPT",
+          resourceType: "PromptVersion",
+          resourceId: createdVersion.id,
+          metadata: {
+            projectId: prompt.projectId,
+            promptId: prompt.id,
+            requestedMode: parsedBody.data.mode ?? null,
+            mode: optimizerMode,
+            skillKey,
+            goal: sanitizedGoal ?? null,
+            templateName: resolvedWorkflow.templateKey,
+            templateVersion: prompt.template?.updatedAt?.toISOString() ?? null,
+            toolKey,
+            workflowProfile,
+            recommendations,
+            structure: structure as Prisma.InputJsonValue,
+            structuredData: structuredData as Prisma.InputJsonValue,
+            model: modelName,
+            scores: calibratedResult.scores,
+            riskFlags: calibratedResult.riskFlags,
+            usageId: usage.id,
+            tokenIn,
+            tokenOut,
+            requestId,
+          },
+          ...auditCtx,
+        });
+
+        return createdVersion;
       });
 
-      await logAuditEvent(tx, {
+      const optimizeDurationMs = Date.now() - startedAt;
+      logSlowIfNeeded(optimizeDurationMs, {
+        promptId: prompt.id,
+        model: modelName,
         orgId: auth.orgId,
-        userId: auth.userId,
-        action: "OPTIMIZE_PROMPT",
-        resourceType: "PromptVersion",
-        resourceId: createdVersion.id,
-        metadata: {
-          projectId: prompt.projectId,
-          promptId: prompt.id,
-          requestedMode: parsedBody.data.mode ?? null,
-          mode: optimizerMode,
+      });
+
+      return NextResponse.json(
+        success({
+          ...latestVersion,
+          recommendations,
+          structure,
+          structuredData,
           skillKey,
-          goal: sanitizedGoal ?? null,
-          templateName: resolvedWorkflow.templateKey,
-          templateVersion: prompt.template?.updatedAt?.toISOString() ?? null,
           toolKey,
           workflowProfile,
-          recommendations,
-          structure: structure as Prisma.InputJsonValue,
-          structuredData: structuredData as Prisma.InputJsonValue,
-          model: modelName,
-          scores: calibratedResult.scores,
-          riskFlags: calibratedResult.riskFlags,
-          usageId: usage.id,
-          tokenIn,
-          tokenOut,
-          requestId,
-        },
-        ...auditCtx,
-      });
-
-      return createdVersion;
-    });
-
-    const optimizeDurationMs = Date.now() - startedAt;
-    logSlowIfNeeded(optimizeDurationMs, {
-      promptId: prompt.id,
-      model: modelName,
-      orgId: auth.orgId,
-    });
-
-    return NextResponse.json(
-      success({
-        ...latestVersion,
-        recommendations,
-        structure,
-        structuredData,
-        skillKey,
-        toolKey,
-        workflowProfile,
-      }),
-      { status: 201 }
-    );
+        }),
+        { status: 201 }
+      );
+    } finally {
+      rateLimitDecision.release?.();
+    }
   } catch (err: unknown) {
     const optimizeDurationMs = Date.now() - startedAt;
     logSlowIfNeeded(optimizeDurationMs, {

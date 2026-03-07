@@ -11,6 +11,7 @@ import {
   UpdateMembershipRoleSchema,
 } from "../../../../../lib/validation/team";
 import { getRequestAuditContext, logAuditEvent } from "../../../../../lib/audit";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,19 @@ export async function GET(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "view_project");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: "members-list",
+      },
+      "api.orgs.members.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const memberships = await prisma.membership.findMany({
       where: {
@@ -83,6 +97,11 @@ export async function GET(req: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 16_000, "api.orgs.members.patch");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { orgSlug } = await ctx.params;
   const parsedSlug = OrganizationSlugSchema.safeParse(orgSlug);
   if (!parsedSlug.success) {
@@ -114,6 +133,19 @@ export async function PATCH(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "change_role");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: "member-role-change",
+      },
+      "api.orgs.members.patch"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     if (!canAssignRole(orgMembership.role, parsedBody.data.role)) {
       return NextResponse.json(
@@ -224,6 +256,11 @@ export async function PATCH(req: Request, ctx: RouteContext) {
 }
 
 export async function DELETE(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 16_000, "api.orgs.members.delete");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { orgSlug } = await ctx.params;
   const parsedSlug = OrganizationSlugSchema.safeParse(orgSlug);
   if (!parsedSlug.success) {
@@ -252,6 +289,19 @@ export async function DELETE(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "remove_member");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: "member-remove",
+      },
+      "api.orgs.members.delete"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const targetMembership = await prisma.membership.findUnique({
       where: {

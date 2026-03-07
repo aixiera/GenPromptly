@@ -8,6 +8,7 @@ import { requireAuthContext } from "../../../../../lib/auth/server";
 import { requirePermission } from "../../../../../lib/rbac";
 import { getPromptWithVersions } from "../../../../../lib/tenantData";
 import { getRequestAuditContext, logAuditEvent } from "../../../../../lib/audit";
+import { enforceRateLimit } from "../../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -30,42 +31,59 @@ export async function GET(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "export_prompt");
     const auditCtx = getRequestAuditContext(req);
-
-    const prompt = await getPromptWithVersions(auth.orgId, parsedId.data);
-    if (!prompt) {
-      return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
-    }
-
-    const latestVersion = prompt.versions[0] ?? null;
-    const payload = {
-      prompt: {
-        id: prompt.id,
-        title: prompt.title,
-        rawPrompt: prompt.rawPrompt,
-        projectId: prompt.projectId,
-        templateId: prompt.templateId,
-        createdAt: prompt.createdAt,
-        updatedAt: prompt.updatedAt,
-      },
-      latestVersion,
-    };
-
-    await prisma.$transaction(async (tx) => {
-      await logAuditEvent(tx, {
-        orgId: auth.orgId,
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "exportOperation",
+      {
         userId: auth.userId,
-        action: "EXPORT_PROMPT",
-        resourceType: "Prompt",
-        resourceId: prompt.id,
-        metadata: {
-          projectId: prompt.projectId,
-          exportedLatestVersionId: latestVersion?.id ?? null,
-        },
-        ...auditCtx,
-      });
-    });
+        orgId: auth.orgId,
+        action: "prompt-export",
+      },
+      "api.prompts.export.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+    try {
 
-    return NextResponse.json(success(payload), { status: 200 });
+      const prompt = await getPromptWithVersions(auth.orgId, parsedId.data);
+      if (!prompt) {
+        return NextResponse.json(error("NOT_FOUND", "Prompt not found"), { status: 404 });
+      }
+
+      const latestVersion = prompt.versions[0] ?? null;
+      const payload = {
+        prompt: {
+          id: prompt.id,
+          title: prompt.title,
+          rawPrompt: prompt.rawPrompt,
+          projectId: prompt.projectId,
+          templateId: prompt.templateId,
+          createdAt: prompt.createdAt,
+          updatedAt: prompt.updatedAt,
+        },
+        latestVersion,
+      };
+
+      await prisma.$transaction(async (tx) => {
+        await logAuditEvent(tx, {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          action: "EXPORT_PROMPT",
+          resourceType: "Prompt",
+          resourceId: prompt.id,
+          metadata: {
+            projectId: prompt.projectId,
+            exportedLatestVersionId: latestVersion?.id ?? null,
+          },
+          ...auditCtx,
+        });
+      });
+
+      return NextResponse.json(success(payload), { status: 200 });
+    } finally {
+      rateLimitDecision.release?.();
+    }
   } catch (err: unknown) {
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });

@@ -8,6 +8,7 @@ import { logAuditEvent, getRequestAuditContext } from "../../../lib/audit";
 import { CreateProjectSchema } from "../../../lib/validation/project";
 import { requirePermission } from "../../../lib/rbac";
 import { listProjects } from "../../../lib/tenantData";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,19 @@ export async function GET(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     requirePermission(ctx, "view_project");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        action: "list-projects",
+      },
+      "api.projects.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const projects = await listProjects(ctx.orgId);
     return NextResponse.json(success(projects), { status: 200 });
@@ -34,6 +48,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 8_000, "api.projects.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -52,6 +71,19 @@ export async function POST(req: Request) {
     const ctx = await requireAuthContext(req);
     requirePermission(ctx, "create_project");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        action: "create-project",
+      },
+      "api.projects.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const project = await prisma.$transaction(async (tx) => {
       const createdProject = await tx.project.create({

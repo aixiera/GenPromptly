@@ -10,6 +10,7 @@ import { requirePermission } from "../../../../../lib/rbac";
 import { CreateInviteSchema, OrganizationSlugSchema } from "../../../../../lib/validation/team";
 import { getRequestAuditContext, logAuditEvent } from "../../../../../lib/audit";
 import { resolveAppOrigin } from "../../../../../lib/config/runtime";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -47,6 +48,19 @@ export async function GET(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "view_project");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: orgMembership.org.id,
+        action: "list-invites",
+      },
+      "api.orgs.invites.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const invites = await prisma.invite.findMany({
       where: {
@@ -98,6 +112,11 @@ export async function GET(req: Request, ctx: RouteContext) {
 }
 
 export async function POST(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 12_000, "api.orgs.invites.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { orgSlug } = await ctx.params;
   const parsedSlug = OrganizationSlugSchema.safeParse(orgSlug);
   if (!parsedSlug.success) {
@@ -129,100 +148,117 @@ export async function POST(req: Request, ctx: RouteContext) {
       return NextResponse.json(error("NOT_FOUND", "Organization not found"), { status: 404 });
     }
     requirePermission({ ...auth, role: orgMembership.role }, "invite_member");
-
-    if (!canAssignRole(orgMembership.role, parsedBody.data.role)) {
-      return NextResponse.json(
-        error("FORBIDDEN", "Your role cannot invite with the requested role", {
-          actorRole: orgMembership.role,
-          requestedRole: parsedBody.data.role,
-        }),
-        { status: 403 }
-      );
-    }
-
-    const inviteEmail = normalizeEmail(parsedBody.data.email);
-    const existingMember = await prisma.membership.findFirst({
-      where: {
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "inviteCreate",
+      {
+        userId: auth.userId,
         orgId: orgMembership.org.id,
-        user: {
-          email: inviteEmail,
-        },
+        action: parsedBody.data.role,
       },
-      select: {
-        id: true,
-      },
-    });
-
-    if (existingMember) {
-      return NextResponse.json(error("CONFLICT", "User is already a member of this organization"), {
-        status: 409,
-      });
+      "api.orgs.invites.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
     }
+    try {
 
-    const inviteToken = generateOpaqueToken();
-    const inviteTokenHash = hashOpaqueToken(inviteToken);
-    const expiresAt = getInviteExpiry(parsedBody.data.expiresInDays);
-    const auditCtx = getRequestAuditContext(req);
+      if (!canAssignRole(orgMembership.role, parsedBody.data.role)) {
+        return NextResponse.json(
+          error("FORBIDDEN", "Your role cannot invite with the requested role", {
+            actorRole: orgMembership.role,
+            requestedRole: parsedBody.data.role,
+          }),
+          { status: 403 }
+        );
+      }
 
-    const createdInvite = await prisma.$transaction(async (tx) => {
-      await tx.invite.updateMany({
+      const inviteEmail = normalizeEmail(parsedBody.data.email);
+      const existingMember = await prisma.membership.findFirst({
         where: {
           orgId: orgMembership.org.id,
-          email: inviteEmail,
-          status: "PENDING",
-        },
-        data: {
-          status: "REVOKED",
-          revokedAt: new Date(),
-        },
-      });
-
-      const invite = await tx.invite.create({
-        data: {
-          orgId: orgMembership.org.id,
-          email: inviteEmail,
-          role: parsedBody.data.role,
-          token: inviteTokenHash,
-          invitedByUserId: auth.userId,
-          expiresAt,
+          user: {
+            email: inviteEmail,
+          },
         },
         select: {
           id: true,
-          email: true,
-          role: true,
-          status: true,
-          expiresAt: true,
-          createdAt: true,
         },
       });
 
-      await logAuditEvent(tx, {
-        orgId: orgMembership.org.id,
-        userId: auth.userId,
-        action: "INVITE_MEMBER",
-        resourceType: "Invite",
-        resourceId: invite.id,
-        metadata: {
-          email: invite.email,
-          role: invite.role,
-          expiresAt: invite.expiresAt.toISOString(),
-        },
-        ...auditCtx,
+      if (existingMember) {
+        return NextResponse.json(error("CONFLICT", "User is already a member of this organization"), {
+          status: 409,
+        });
+      }
+
+      const inviteToken = generateOpaqueToken();
+      const inviteTokenHash = hashOpaqueToken(inviteToken);
+      const expiresAt = getInviteExpiry(parsedBody.data.expiresInDays);
+      const auditCtx = getRequestAuditContext(req);
+
+      const createdInvite = await prisma.$transaction(async (tx) => {
+        await tx.invite.updateMany({
+          where: {
+            orgId: orgMembership.org.id,
+            email: inviteEmail,
+            status: "PENDING",
+          },
+          data: {
+            status: "REVOKED",
+            revokedAt: new Date(),
+          },
+        });
+
+        const invite = await tx.invite.create({
+          data: {
+            orgId: orgMembership.org.id,
+            email: inviteEmail,
+            role: parsedBody.data.role,
+            token: inviteTokenHash,
+            invitedByUserId: auth.userId,
+            expiresAt,
+          },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            status: true,
+            expiresAt: true,
+            createdAt: true,
+          },
+        });
+
+        await logAuditEvent(tx, {
+          orgId: orgMembership.org.id,
+          userId: auth.userId,
+          action: "INVITE_MEMBER",
+          resourceType: "Invite",
+          resourceId: invite.id,
+          metadata: {
+            email: invite.email,
+            role: invite.role,
+            expiresAt: invite.expiresAt.toISOString(),
+          },
+          ...auditCtx,
+        });
+
+        return invite;
       });
 
-      return invite;
-    });
+      const baseUrl = resolveAppOrigin(req);
+      const inviteLink = `${baseUrl}/invite?token=${encodeURIComponent(inviteToken)}`;
 
-    const baseUrl = resolveAppOrigin(req);
-    const inviteLink = `${baseUrl}/invite?token=${encodeURIComponent(inviteToken)}`;
-
-    return NextResponse.json(
-      success({
-        ...createdInvite,
-        inviteLink,
-      }),
-      { status: 201 }
-    );
+      return NextResponse.json(
+        success({
+          ...createdInvite,
+          inviteLink,
+        }),
+        { status: 201 }
+      );
+    } finally {
+      rateLimitDecision.release?.();
+    }
   } catch (err: unknown) {
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });

@@ -7,6 +7,7 @@ import { error, success } from "../../../../lib/api/response";
 import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/errorDiagnostics";
 import { requireAuthContext } from "../../../../lib/auth/server";
 import { requirePermission } from "../../../../lib/rbac";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,19 @@ export async function GET(req: Request, ctx: RouteContext) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "view_template");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "template-detail",
+      },
+      "api.templates.id.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const template = await prisma.template.findUnique({ where: { id: parsedId.data } });
     if (!template) {
@@ -68,6 +82,11 @@ export async function GET(req: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 120_000, "api.templates.id.patch");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { id } = await ctx.params;
   const parsedId = TemplateIdSchema.safeParse(id);
   if (!parsedId.success) {
@@ -93,6 +112,19 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "update_template");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "update-template",
+      },
+      "api.templates.id.patch"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const existing = await prisma.template.findUnique({
       where: { id: parsedId.data },

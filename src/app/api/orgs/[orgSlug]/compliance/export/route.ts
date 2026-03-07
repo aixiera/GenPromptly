@@ -6,6 +6,7 @@ import { logUnhandledApiError, toInfraHttpError } from "../../../../../../lib/ap
 import { requireAuthContextWithoutOrg } from "../../../../../../lib/auth/server";
 import { requirePermission } from "../../../../../../lib/rbac";
 import { OrganizationSlugSchema } from "../../../../../../lib/validation/team";
+import { enforceRateLimit } from "../../../../../../lib/security/rateLimit";
 import {
   buildComplianceReport,
   parseComplianceFramework,
@@ -31,6 +32,9 @@ function parseRequestedFramework(url: URL): ComplianceFramework | null {
   if (!raw) {
     return null;
   }
+  if (raw.length > 30) {
+    throw new HttpError(400, "VALIDATION_ERROR", "Framework filter is too long");
+  }
   const parsed = parseComplianceFramework(raw);
   if (!parsed) {
     throw new HttpError(400, "VALIDATION_ERROR", "Invalid compliance framework filter", { framework: raw });
@@ -40,6 +44,9 @@ function parseRequestedFramework(url: URL): ComplianceFramework | null {
 
 function parseFormat(url: URL): "json" | "csv" {
   const raw = url.searchParams.get("format")?.trim().toLowerCase();
+  if (raw && raw.length > 10) {
+    throw new HttpError(400, "VALIDATION_ERROR", "Export format is too long");
+  }
   if (!raw || raw === "json") {
     return "json";
   }
@@ -128,42 +135,59 @@ export async function GET(req: Request, ctx: RouteContext) {
     const url = new URL(req.url);
     const format = parseFormat(url);
     const framework = parseRequestedFramework(url);
-    const report = await buildComplianceReport(orgMembership.org.id, { framework, issueLimit: 500 });
-
-    const auditCtx = getRequestAuditContext(req);
-    await prisma.$transaction(async (tx) => {
-      await logAuditEvent(tx, {
-        orgId: orgMembership.org.id,
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "exportOperation",
+      {
         userId: auth.userId,
-        action: "EXPORT_COMPLIANCE_REPORT",
-        resourceType: "ComplianceReport",
-        resourceId: `${orgMembership.org.id}:${format}`,
-        metadata: {
-          format,
-          framework: framework ?? "ALL",
-          issueCount: report.issues.length,
-        },
-        ...auditCtx,
-      });
-    });
+        orgId: orgMembership.org.id,
+        action: `compliance-${format}-${framework ?? "all"}`,
+      },
+      "api.orgs.compliance.export.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+    try {
+      const report = await buildComplianceReport(orgMembership.org.id, { framework, issueLimit: 500 });
 
-    const filename = buildFilename(parsedSlug.data, format);
-    if (format === "csv") {
-      return new NextResponse(renderCsv(report), {
+      const auditCtx = getRequestAuditContext(req);
+      await prisma.$transaction(async (tx) => {
+        await logAuditEvent(tx, {
+          orgId: orgMembership.org.id,
+          userId: auth.userId,
+          action: "EXPORT_COMPLIANCE_REPORT",
+          resourceType: "ComplianceReport",
+          resourceId: `${orgMembership.org.id}:${format}`,
+          metadata: {
+            format,
+            framework: framework ?? "ALL",
+            issueCount: report.issues.length,
+          },
+          ...auditCtx,
+        });
+      });
+
+      const filename = buildFilename(parsedSlug.data, format);
+      if (format === "csv") {
+        return new NextResponse(renderCsv(report), {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${filename}"`,
+          },
+        });
+      }
+
+      return NextResponse.json(success(report), {
         status: 200,
         headers: {
-          "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="${filename}"`,
         },
       });
+    } finally {
+      rateLimitDecision.release?.();
     }
-
-    return NextResponse.json(success(report), {
-      status: 200,
-      headers: {
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
   } catch (err: unknown) {
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });

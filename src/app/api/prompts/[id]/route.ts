@@ -9,6 +9,7 @@ import { logAuditEvent, getRequestAuditContext } from "../../../../lib/audit";
 import { UpdatePromptSchema } from "../../../../lib/validation/prompt";
 import { requirePermission } from "../../../../lib/rbac";
 import { getPromptById, getPromptWithVersions } from "../../../../lib/tenantData";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,19 @@ export async function GET(req: Request, ctx: RouteContext) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "view_prompt");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "prompt-detail",
+      },
+      "api.prompts.id.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const prompt = await getPromptWithVersions(auth.orgId, parsedId.data);
     if (!prompt) {
@@ -53,6 +67,11 @@ export async function GET(req: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 64_000, "api.prompts.id.patch");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { id } = await ctx.params;
   const parsedId = PromptIdSchema.safeParse(id);
   if (!parsedId.success) {
@@ -79,6 +98,19 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "update_prompt");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "update-prompt",
+      },
+      "api.prompts.id.patch"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const existing = await getPromptById(auth.orgId, parsedId.data);
     if (!existing) {
@@ -154,6 +186,19 @@ export async function DELETE(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "delete_prompt");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "delete-prompt",
+      },
+      "api.prompts.id.delete"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const existing = await getPromptById(auth.orgId, parsedId.data);
     if (!existing) {

@@ -6,6 +6,7 @@ import { logUnhandledApiError, toInfraHttpError } from "../../../lib/api/errorDi
 import { reserveOrganizationSlug } from "../../../lib/auth/organization";
 import { requireAuthenticatedUser } from "../../../lib/auth/server";
 import { logAuditEvent } from "../../../lib/audit";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -13,9 +14,21 @@ type CreateOrgPayload = {
   name?: unknown;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const user = await requireAuthenticatedUser();
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "authSession",
+      {
+        userId: user.id,
+        action: "list-orgs",
+      },
+      "api.orgs.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
     const memberships = await prisma.membership.findMany({
       where: { userId: user.id },
       select: {
@@ -71,6 +84,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 8_000, "api.orgs.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   let payload: CreateOrgPayload;
   try {
     payload = (await req.json()) as CreateOrgPayload;
@@ -87,6 +105,18 @@ export async function POST(req: Request) {
 
   try {
     const user = await requireAuthenticatedUser();
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: user.id,
+        action: "create-org",
+      },
+      "api.orgs.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
     const slug = await reserveOrganizationSlug(orgName);
 
     const organization = await prisma.$transaction(async (tx) => {

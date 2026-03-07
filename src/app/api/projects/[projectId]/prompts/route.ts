@@ -6,6 +6,7 @@ import { logUnhandledApiError, toInfraHttpError } from "../../../../../lib/api/e
 import { requireAuthContext } from "../../../../../lib/auth/server";
 import { requirePermission } from "../../../../../lib/rbac";
 import { getProjectById, listPromptsByProject } from "../../../../../lib/tenantData";
+import { enforceRateLimit } from "../../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,19 @@ export async function GET(req: Request, ctx: RouteContext) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "view_prompt");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "project-prompts",
+      },
+      "api.projects.prompts.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const project = await getProjectById(auth.orgId, parsedId.data);
     if (!project) {

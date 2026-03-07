@@ -3,12 +3,26 @@ import { HttpError } from "../../../../lib/api/httpError";
 import { error, success } from "../../../../lib/api/response";
 import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/errorDiagnostics";
 import { requireAuthContext } from "../../../../lib/auth/server";
+import { enforceRateLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "authSession",
+      {
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        action: "auth-me",
+      },
+      "api.auth.me.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     return NextResponse.json(
       success({

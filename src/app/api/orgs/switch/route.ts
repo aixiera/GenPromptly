@@ -5,6 +5,7 @@ import { HttpError } from "../../../../lib/api/httpError";
 import { error, success } from "../../../../lib/api/response";
 import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/errorDiagnostics";
 import { requireAuthenticatedUser } from "../../../../lib/auth/server";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,11 @@ const OrgSwitchSchema = z
   });
 
 export async function POST(req: Request) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 8_000, "api.orgs.switch.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -44,6 +50,18 @@ export async function POST(req: Request) {
 
   try {
     const user = await requireAuthenticatedUser();
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "orgSwitch",
+      {
+        userId: user.id,
+        action: requestedOrgSlug || requestedOrgId || "switch",
+      },
+      "api.orgs.switch.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
     const memberships = await prisma.membership.findMany({
       where: {
         userId: user.id,

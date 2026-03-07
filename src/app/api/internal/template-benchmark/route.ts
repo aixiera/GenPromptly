@@ -7,6 +7,7 @@ import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/erro
 import { requireAuthContext } from "../../../../lib/auth/server";
 import { requirePermission } from "../../../../lib/rbac";
 import { isOpenAiConfigured } from "../../../../lib/config/runtime";
+import { enforceRateLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -83,56 +84,73 @@ export async function GET(req: Request) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "benchmark_template");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "internalBenchmark",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "template-benchmark",
+      },
+      "api.internal.template-benchmark.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+    try {
 
-    const templates = await prisma.template.findMany({
-      where: {
-        key: {
-          in: [...TEMPLATE_KEYS],
+      const templates = await prisma.template.findMany({
+        where: {
+          key: {
+            in: [...TEMPLATE_KEYS],
+          },
         },
-      },
-      select: {
-        key: true,
-        systemPrompt: true,
-      },
-    });
+        select: {
+          key: true,
+          systemPrompt: true,
+        },
+      });
 
-    const templateMap = new Map(templates.map((template) => [template.key, template.systemPrompt]));
-    const rows: BenchmarkRow[] = [];
+      const templateMap = new Map(templates.map((template) => [template.key, template.systemPrompt]));
+      const rows: BenchmarkRow[] = [];
 
-    for (const templateKey of TEMPLATE_KEYS) {
-      const templatePrompt = templateMap.get(templateKey) ?? null;
-      if (!templatePrompt) {
+      for (const templateKey of TEMPLATE_KEYS) {
+        const templatePrompt = templateMap.get(templateKey) ?? null;
+        if (!templatePrompt) {
+          rows.push({
+            templateKey,
+            avgScore: 0,
+            testedCases: 0,
+          });
+          continue;
+        }
+
+        const testCases = BENCHMARK_CASES[templateKey];
+        const scores: number[] = [];
+
+        for (const testInput of testCases) {
+          try {
+            const result = await optimizePrompt(testInput, "clarity", undefined, templatePrompt);
+            scores.push(toCompositeScore(result.scores));
+          } catch (benchmarkError: unknown) {
+            console.error("Template benchmark case failed", {
+              templateKey,
+              message: benchmarkError instanceof Error ? benchmarkError.message : String(benchmarkError),
+            });
+          }
+        }
+
         rows.push({
           templateKey,
-          avgScore: 0,
-          testedCases: 0,
+          avgScore: Number(average(scores).toFixed(2)),
+          testedCases: testCases.length,
         });
-        continue;
       }
 
-      const testCases = BENCHMARK_CASES[templateKey];
-      const scores: number[] = [];
-
-      for (const testInput of testCases) {
-        try {
-          const result = await optimizePrompt(testInput, "clarity", undefined, templatePrompt);
-          scores.push(toCompositeScore(result.scores));
-        } catch (benchmarkError: unknown) {
-          console.error("Template benchmark case failed", {
-            templateKey,
-            message: benchmarkError instanceof Error ? benchmarkError.message : String(benchmarkError),
-          });
-        }
-      }
-
-      rows.push({
-        templateKey,
-        avgScore: Number(average(scores).toFixed(2)),
-        testedCases: testCases.length,
-      });
+      return NextResponse.json(success(rows), { status: 200 });
+    } finally {
+      rateLimitDecision.release?.();
     }
-
-    return NextResponse.json(success(rows), { status: 200 });
   } catch (err: unknown) {
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });

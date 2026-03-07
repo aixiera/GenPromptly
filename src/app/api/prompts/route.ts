@@ -9,6 +9,7 @@ import { CreatePromptSchema } from "../../../lib/validation/prompt";
 import { requirePermission } from "../../../lib/rbac";
 import { getProjectById } from "../../../lib/tenantData";
 import { getSkillByTemplateKey } from "../../../lib/tools/toolRegistry";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,19 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const projectId = url.searchParams.get("projectId")?.trim() || null;
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        action: projectId ? "list-prompts-by-project" : "list-prompts",
+      },
+      "api.prompts.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
     if (projectId) {
       const project = await getProjectById(ctx.orgId, projectId);
       if (!project) {
@@ -135,6 +149,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 64_000, "api.prompts.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -153,6 +172,19 @@ export async function POST(req: Request) {
     const ctx = await requireAuthContext(req);
     requirePermission(ctx, "create_prompt");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        action: "create-prompt",
+      },
+      "api.prompts.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const project = await getProjectById(ctx.orgId, parsed.data.projectId);
     if (!project) {

@@ -14,6 +14,7 @@ import { pickHigherRole } from "../../../../lib/auth/roles";
 import { requireAuthenticatedUser } from "../../../../lib/auth/server";
 import { getRequestAuditContext, logAuditEvent } from "../../../../lib/audit";
 import { AcceptInviteSchema } from "../../../../lib/validation/auth";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,11 @@ async function getVerifiedPrimaryEmail(clerkUserId: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 10_000, "api.invites.accept.post");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -61,6 +67,18 @@ export async function POST(req: Request) {
 
   try {
     const user = await requireAuthenticatedUser();
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "inviteAccept",
+      {
+        userId: user.id,
+        action: "accept-invite",
+      },
+      "api.invites.accept.post"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
     const verifiedEmail = await getVerifiedPrimaryEmail(user.clerkUserId);
     const inviteToken = parsed.data.token;
     const inviteTokenHash = hashOpaqueToken(inviteToken);

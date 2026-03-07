@@ -9,6 +9,7 @@ import { requirePermission } from "../../../../lib/rbac";
 import { getRequestAuditContext, logAuditEvent } from "../../../../lib/audit";
 import { getProjectById } from "../../../../lib/tenantData";
 import { UpdateProjectSchema } from "../../../../lib/validation/project";
+import { enforceRateLimit, enforceRequestBodyLimit } from "../../../../lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,19 @@ export async function GET(req: Request, ctx: RouteContext) {
   try {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "view_project");
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "readHeavy",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "project-detail",
+      },
+      "api.projects.id.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const project = await getProjectById(auth.orgId, parsedId.data);
     if (!project) {
@@ -53,6 +67,11 @@ export async function GET(req: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(req: Request, ctx: RouteContext) {
+  const bodyTooLarge = enforceRequestBodyLimit(req, 16_000, "api.projects.id.patch");
+  if (bodyTooLarge) {
+    return bodyTooLarge;
+  }
+
   const { projectId } = await ctx.params;
   const parsedId = ProjectIdSchema.safeParse(projectId);
   if (!parsedId.success) {
@@ -79,6 +98,19 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "update_project");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "update-project",
+      },
+      "api.projects.id.patch"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const existing = await getProjectById(auth.orgId, parsedId.data);
     if (!existing) {
@@ -154,6 +186,19 @@ export async function DELETE(req: Request, ctx: RouteContext) {
     const auth = await requireAuthContext(req);
     requirePermission(auth, "delete_project");
     const auditCtx = getRequestAuditContext(req);
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "writeMutation",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "delete-project",
+      },
+      "api.projects.id.delete"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
 
     const existing = await getProjectById(auth.orgId, parsedId.data);
     if (!existing) {
