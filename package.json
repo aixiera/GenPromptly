@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm exec prisma generate && next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "next lint",
     "db:seed": "tsx prisma/seed.ts",
     "templates:update": "tsx scripts/updateTemplates.ts"
   },

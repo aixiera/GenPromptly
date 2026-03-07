@@ -8,6 +8,11 @@ export const metadata: Metadata = {
     template: "%s | GenPromptly",
   },
   description: "GenPromptly is a B2B prompt operations platform operated by OpsForLocal.",
+  icons: {
+    icon: "/genpromptly-icon.png",
+    apple: "/genpromptly-icon.png",
+    shortcut: "/genpromptly-icon.png",
+  },
 };
 
 export default function RootLayout({

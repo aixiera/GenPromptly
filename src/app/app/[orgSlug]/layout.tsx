@@ -26,7 +26,7 @@ export default async function OrgLayout({ children, params }: OrgLayoutProps) {
     <main className="app-shell workspace-app">
       <aside className="sidebar">
         <div className="brand-box">
-          <div className="brand-mark" />
+          <img className="brand-mark" src="/genpromptly-icon.png" alt="GenPromptly icon" />
           <div>
             <p className="brand-title">{context.membership.orgName}</p>
             <p className="brand-subtitle">GenPromptly</p>

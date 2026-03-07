@@ -144,8 +144,8 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(145deg, rgba(127, 192, 255, 0.95), rgba(47, 118, 234, 0.95));
-  box-shadow: 0 10px 20px rgba(5, 17, 44, 0.3);
+  object-fit: cover;
+  box-shadow: 0 8px 16px rgba(5, 17, 44, 0.24);
 }
 .brand-title { margin: 0; font-weight: 700; }
 .brand-subtitle { margin: 0; opacity: 0.78; font-size: 12px; }

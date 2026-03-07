@@ -1,6 +1,17 @@
 ignoredBuiltDependencies:
+  - '@clerk/shared'
+  - '@prisma/engines'
+  - prisma
   - sharp
   - unrs-resolver
 
 onlyBuiltDependencies:
   - esbuild
+
+packages:
+  - .
+
+onlyBuiltDependencies:
+  - prisma
+  - "@prisma/engines"
+  - "@clerk/shared"
