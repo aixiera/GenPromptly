@@ -151,7 +151,19 @@ const BASE_RESULT_PROPERTIES: Record<string, JsonSchemaNode> = {
   },
   structure: {
     type: "object",
-    additionalProperties: true,
+    additionalProperties: false,
+    properties: {
+      summary: { type: "string" },
+      sections: {
+        type: "array",
+        items: { type: "string" },
+      },
+      constraints: {
+        type: "array",
+        items: { type: "string" },
+      },
+      outputFormat: { type: "string" },
+    },
   },
   scores: SCORE_SCHEMA,
   missingFields: {

@@ -93,7 +93,25 @@ const DEFAULT_OPTIMIZE_RESULT_JSON_SCHEMA = {
     },
     structure: {
       type: "object",
-      additionalProperties: true,
+      additionalProperties: false,
+      required: ["goal", "context", "requirements", "constraints", "outputFormat", "steps"],
+      properties: {
+        goal: { type: "string" },
+        context: { type: "string" },
+        requirements: {
+          type: "array",
+          items: { type: "string" },
+        },
+        constraints: {
+          type: "array",
+          items: { type: "string" },
+        },
+        outputFormat: { type: "string" },
+        steps: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
     },
     scores: {
       type: "object",
@@ -116,10 +134,66 @@ const DEFAULT_OPTIMIZE_RESULT_JSON_SCHEMA = {
     },
     structuredData: {
       type: "object",
-      additionalProperties: true,
+      additionalProperties: false,
+      required: ["highlights", "notes", "nextSteps"],
+      properties: {
+        highlights: {
+          type: "array",
+          items: { type: "string" },
+        },
+        notes: {
+          type: "array",
+          items: { type: "string" },
+        },
+        nextSteps: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
     },
   },
 } as const;
+
+type JsonSchemaObject = Record<string, unknown>;
+
+function isJsonSchemaObject(value: unknown): value is JsonSchemaObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toStrictJsonSchemaNode(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map((entry) => toStrictJsonSchemaNode(entry));
+  }
+  if (!isJsonSchemaObject(node)) {
+    return node;
+  }
+
+  const normalized: JsonSchemaObject = {};
+  for (const [key, value] of Object.entries(node)) {
+    normalized[key] = toStrictJsonSchemaNode(value);
+  }
+
+  const maybeProperties = normalized.properties;
+  const hasProperties = isJsonSchemaObject(maybeProperties);
+  const isObjectNode = normalized.type === "object" || hasProperties;
+  if (isObjectNode) {
+    const properties = hasProperties ? maybeProperties : {};
+    normalized.type = "object";
+    normalized.properties = properties;
+    normalized.additionalProperties = false;
+    normalized.required = Object.keys(properties);
+  }
+
+  return normalized;
+}
+
+function toStrictJsonSchema(schema: JsonSchemaObject): JsonSchemaObject {
+  const normalized = toStrictJsonSchemaNode(schema);
+  if (!isJsonSchemaObject(normalized)) {
+    throw new Error("Optimize JSON schema must resolve to an object");
+  }
+  return normalized;
+}
 
 function createClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -233,7 +307,9 @@ function normalizeStructuredResult(
   };
   const parsedBase = OptimizeResultSchema.safeParse(basePayload);
   if (!parsedBase.success) {
-    throw new Error("Model output failed base result validation");
+    const issue = parsedBase.error.issues[0];
+    const issuePath = issue?.path.join(".") || "result";
+    throw new Error(`Model output failed base result validation at ${issuePath}: ${issue?.message ?? "invalid field"}`);
   }
 
   const recommendations = toStringArray(candidate.recommendations).slice(0, 20);
@@ -343,6 +419,177 @@ function normalizeAndRescore(result: StructuredOptimizeResult): StructuredOptimi
   };
 }
 
+function tryParseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function unwrapCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (!fencedMatch || typeof fencedMatch[1] !== "string") {
+    return trimmed;
+  }
+  return fencedMatch[1].trim();
+}
+
+function extractFirstJsonBlock(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const openingIndices = [trimmed.indexOf("{"), trimmed.indexOf("[")].filter((index) => index >= 0);
+  if (openingIndices.length === 0) {
+    return null;
+  }
+  const start = Math.min(...openingIndices);
+
+  const openChar = trimmed[start];
+  const closeChar = openChar === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === openChar) {
+      depth += 1;
+      continue;
+    }
+    if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return trimmed.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function toParsedObjectCandidate(value: unknown): Record<string, unknown> | null {
+  if (isRecord(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const nested = tryParseJson(value);
+  if (!isRecord(nested)) {
+    return null;
+  }
+  return nested;
+}
+
+function parseCandidateFromText(text: string): unknown | null {
+  const direct = toParsedObjectCandidate(tryParseJson(text.trim()));
+  if (direct !== null) {
+    return direct;
+  }
+
+  const withoutFence = unwrapCodeFence(text);
+  if (withoutFence !== text.trim()) {
+    const parsed = toParsedObjectCandidate(tryParseJson(withoutFence));
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  const extracted = extractFirstJsonBlock(withoutFence);
+  if (!extracted) {
+    return null;
+  }
+
+  const parsedExtracted = toParsedObjectCandidate(tryParseJson(extracted));
+  if (parsedExtracted !== null) {
+    return parsedExtracted;
+  }
+
+  return null;
+}
+
+function parseStructuredCandidateFromResponse(response: OpenAI.Responses.Response): unknown {
+  const textCandidates: string[] = [];
+  const pushCandidate = (value: string | undefined) => {
+    const candidate = value?.trim();
+    if (candidate && !textCandidates.includes(candidate)) {
+      textCandidates.push(candidate);
+    }
+  };
+
+  pushCandidate(response.output_text);
+
+  const outputItems = Array.isArray(response.output) ? response.output : [];
+  for (const item of outputItems) {
+    if (item.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+
+    for (const content of item.content) {
+      if (content.type !== "output_text") {
+        continue;
+      }
+
+      if ("parsed" in content && content.parsed !== null && content.parsed !== undefined) {
+        return content.parsed;
+      }
+
+      pushCandidate(content.text);
+    }
+  }
+
+  for (const textCandidate of textCandidates) {
+    const parsed = parseCandidateFromText(textCandidate);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  if (response.error?.message) {
+    throw new Error(`Model response error: ${response.error.message}`);
+  }
+
+  const refusalFound = outputItems.some(
+    (item) =>
+      item.type === "message" &&
+      Array.isArray(item.content) &&
+      item.content.some((content) => content.type === "refusal")
+  );
+  if (refusalFound) {
+    throw new Error("Model refused to provide structured output");
+  }
+
+  if (textCandidates.length === 0) {
+    throw new Error("Empty response from model");
+  }
+
+  throw new Error("Malformed JSON in model output");
+}
+
 async function requestStructuredResult(
   client: OpenAI,
   rawPrompt: string,
@@ -361,6 +608,7 @@ async function requestStructuredResult(
     ? [baseInstructions, buildTemplateInstructions(templateSystemPrompt)].join("\n\n")
     : baseInstructions;
   const resultSchema = workflow?.outputSchema ?? DEFAULT_OPTIMIZE_RESULT_JSON_SCHEMA;
+  const strictResultSchema = toStrictJsonSchema(resultSchema as JsonSchemaObject);
 
   const timeoutMs = getLlmTimeoutMs();
   const response = await new Promise<OpenAI.Responses.Response>((resolve, reject) => {
@@ -379,7 +627,7 @@ async function requestStructuredResult(
             type: "json_schema",
             name: "optimize_result",
             strict: true,
-            schema: resultSchema as Record<string, unknown>,
+            schema: strictResultSchema,
           },
         },
       })
@@ -393,17 +641,7 @@ async function requestStructuredResult(
       });
   });
 
-  const outputText = response.output_text?.trim();
-  if (!outputText) {
-    throw new Error("Empty response from model");
-  }
-
-  let candidate: unknown;
-  try {
-    candidate = JSON.parse(outputText) as unknown;
-  } catch {
-    throw new Error("Malformed JSON in model output");
-  }
+  const candidate = parseStructuredCandidateFromResponse(response);
 
   const usage = response.usage as
     | {
@@ -433,6 +671,7 @@ export async function optimizePromptWithMeta(
   }
 
   const client = createClient();
+  const isDev = process.env.NODE_ENV !== "production";
   let lastFailure: unknown;
   const goalVariants: Array<string | undefined> =
     parsedInput.data.goal !== undefined ? [parsedInput.data.goal, undefined] : [undefined];
@@ -457,9 +696,19 @@ export async function optimizePromptWithMeta(
           model: response.model,
         };
       } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        if (isDev) {
+          console.warn("Optimizer attempt failed", {
+            mode: parsedInput.data.mode,
+            goalUsed: goalVariant !== undefined,
+            attempt: attempt + 1,
+            workflow: options.workflow?.skillKey ?? null,
+            reason,
+          });
+        }
         lastFailure = {
           goalUsed: goalVariant !== undefined,
-          reason: err instanceof Error ? err.message : String(err),
+          reason,
         };
       }
     }

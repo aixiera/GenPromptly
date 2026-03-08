@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ComplianceBadge } from "../components/ComplianceBadge";
 import { VariablePanel } from "../components/VariablePanel";
+import {
+  parseOptimizePromptResponseData,
+  toPromptVersionFromOptimizeResponse,
+} from "../lib/api/contracts/optimize";
 import { apiPatch, apiPost, getApiErrorMessage } from "../lib/apiClient";
 import { usePromptDetail } from "../lib/hooks/usePromptDetail";
 import type { Prompt, PromptVersion } from "../lib/types";
@@ -17,6 +21,13 @@ type PromptEditorProps = {
 const LOADING_TEXT = "Loading data...";
 const EMPTY_VERSIONS_TEXT = "No versions yet.";
 const EMPTY_RESULT_TEXT = "No optimized result yet.";
+
+function logOptimizeClient(event: string, details: Record<string, unknown>): void {
+  console.info("Prompt editor optimize", {
+    event,
+    ...details,
+  });
+}
 
 function normalizeScoreOutOfTen(value: number): number {
   if (!Number.isFinite(value)) {
@@ -143,20 +154,33 @@ export function PromptEditor({
 
     setIsOptimizing(true);
     setOptimizeError(null);
+    logOptimizeClient("optimize_request_started", {
+      promptId: data.id,
+      mode: optimizeMode,
+      hasGoal: Boolean(optimizeGoal.trim()),
+    });
 
     try {
-      const createdVersion = await apiPost<PromptVersion>(
-        `/api/prompts/${encodeURIComponent(data.id)}/optimize`,
-        {
+      const optimizeResponse = parseOptimizePromptResponseData(
+        await apiPost<unknown>(`/api/prompts/${encodeURIComponent(data.id)}/optimize`, {
           mode: optimizeMode,
           goal: optimizeGoal.trim() || undefined,
-        }
+        })
       );
+      const createdVersion = toPromptVersionFromOptimizeResponse(optimizeResponse);
 
       setVersions((prev) => [createdVersion, ...prev.filter((v) => v.id !== createdVersion.id)]);
       setSelectedVersionId(createdVersion.id);
+      logOptimizeClient("optimize_request_success", {
+        promptId: data.id,
+        versionId: optimizeResponse.versionId,
+      });
     } catch (err: unknown) {
       setOptimizeError(getApiErrorMessage(err, "Failed to optimize prompt"));
+      logOptimizeClient("optimize_request_failed", {
+        promptId: data.id,
+        code: err instanceof Error ? err.name : "unknown_error",
+      });
     } finally {
       setIsOptimizing(false);
     }

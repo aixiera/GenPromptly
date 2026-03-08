@@ -12,6 +12,10 @@ import {
   getApiErrorMessage,
   triggerBrowserDownload,
 } from "../lib/apiClient";
+import {
+  parseOptimizePromptResponseData,
+  toPromptVersionFromOptimizeResponse,
+} from "../lib/api/contracts/optimize";
 import type { PromptVersion } from "../lib/types";
 import {
   DEFAULT_SKILL_KEY,
@@ -44,6 +48,8 @@ type PromptDetailPanelProps = {
   canExport: boolean;
 };
 
+type OptimizeUiState = "idle" | "loading" | "success" | "error";
+
 function scoreLabel(value: number): string {
   return Number.isFinite(value) ? value.toFixed(1) : "0.0";
 }
@@ -68,6 +74,37 @@ function toRecord(value: unknown): Record<string, unknown> {
 
 function toNullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function formatOptimizeDevHint(details: unknown): string | null {
+  if (details === undefined) {
+    return null;
+  }
+
+  try {
+    const serialized = JSON.stringify(details);
+    if (!serialized) {
+      return null;
+    }
+    return serialized.length > 260 ? `${serialized.slice(0, 257)}...` : serialized;
+  } catch {
+    return null;
+  }
+}
+
+function readRequestIdFromDetails(details: unknown): string | null {
+  if (typeof details !== "object" || details === null) {
+    return null;
+  }
+  const value = (details as Record<string, unknown>).requestId;
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function logOptimizeClient(event: string, details: Record<string, unknown>): void {
+  console.info("Prompt optimize client", {
+    event,
+    ...details,
+  });
 }
 
 function resolveVersionSkill(version: PromptVersion, templateKey: string | null): ToolWorkflow | null {
@@ -293,6 +330,11 @@ export function PromptDetailPanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [upgradeRequired, setUpgradeRequired] = useState(false);
+  const [optimizeState, setOptimizeState] = useState<OptimizeUiState>(
+    prompt.versions.length > 0 ? "success" : "idle"
+  );
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const [optimizeDevHint, setOptimizeDevHint] = useState<string | null>(null);
 
   const allSkills = useMemo(() => listSkillDefinitions(), []);
   const templateSkill = useMemo(() => getSkillByTemplateKey(templateKey), [templateKey]);
@@ -346,6 +388,30 @@ export function PromptDetailPanel({
   const latestVersionSkill = latestVersion ? resolveVersionSkill(latestVersion, templateKey) : null;
   const latestResultSkill = latestVersionSkill ?? selectedSkill;
   const hasChanges = title.trim() !== prompt.title || rawPrompt.trim() !== prompt.rawPrompt;
+  const optimizeActionLabel =
+    selectedSkill.skillKey === "workflow_spec" ? "Generate Workflow Spec" : selectedSkill.optimizeLabel;
+  const optimizeResultExpectation =
+    selectedSkill.skillKey === "workflow_spec"
+      ? "Generates a structured workflow spec with steps, required inputs, expected outputs, and constraints."
+      : `Generates ${selectedSkill.resultTitle.toLowerCase()} and saves it as a new version.`;
+
+  useEffect(() => {
+    setTitle(prompt.title);
+    setRawPrompt(prompt.rawPrompt);
+  }, [prompt.id, prompt.rawPrompt, prompt.title]);
+
+  useEffect(() => {
+    setVersions(prompt.versions);
+    setOptimizeState((previous) => {
+      if (prompt.versions.length > 0 && previous === "idle") {
+        return "success";
+      }
+      if (prompt.versions.length === 0 && previous === "success") {
+        return "idle";
+      }
+      return previous;
+    });
+  }, [prompt.versions]);
 
   const handleSave = async () => {
     if (!canUpdate) {
@@ -388,26 +454,57 @@ export function PromptDetailPanel({
     setError(null);
     setMessage(null);
     setUpgradeRequired(false);
+    setOptimizeState("loading");
+    setOptimizeError(null);
+    setOptimizeDevHint(null);
+    logOptimizeClient("optimize_request_started", {
+      promptId: prompt.id,
+      skillKey: selectedSkill.skillKey,
+      mode: selectedSkill.defaultOptimizationProfile,
+      hasGoal: Boolean(optimizeGoal.trim()),
+    });
     try {
-      const createdVersion = await apiPost<PromptVersion>(
-        `/api/prompts/${encodeURIComponent(prompt.id)}/optimize`,
-        {
+      const optimizeResponse = parseOptimizePromptResponseData(
+        await apiPost<unknown>(`/api/prompts/${encodeURIComponent(prompt.id)}/optimize`, {
           mode: selectedSkill.defaultOptimizationProfile,
           skillKey: selectedSkill.skillKey,
           goal: optimizeGoal.trim() || undefined,
-        }
+        })
       );
+      const createdVersion = toPromptVersionFromOptimizeResponse(optimizeResponse);
       setVersions((prev) => [createdVersion, ...prev.filter((entry) => entry.id !== createdVersion.id)]);
       setMessage("Prompt optimized. Review the latest result and version history.");
       setUpgradeRequired(false);
+      setOptimizeState("success");
+      setOptimizeError(null);
+      setOptimizeDevHint(null);
+      logOptimizeClient("optimize_request_success", {
+        promptId: prompt.id,
+        versionId: optimizeResponse.versionId,
+        createdAt: optimizeResponse.createdAt,
+      });
+      router.refresh();
     } catch (err: unknown) {
+      setOptimizeState("error");
+      setOptimizeError(getApiErrorMessage(err, "Failed to optimize prompt"));
       if (err instanceof ApiRequestError && err.code === "UPGRADE_REQUIRED") {
         setUpgradeRequired(true);
-        setError(err.message);
       } else {
         setUpgradeRequired(false);
-        setError(getApiErrorMessage(err, "Failed to optimize prompt"));
       }
+      if (process.env.NODE_ENV !== "production" && err instanceof ApiRequestError) {
+        setOptimizeDevHint(formatOptimizeDevHint(err.details));
+      } else if (process.env.NODE_ENV !== "production" && err instanceof Error) {
+        setOptimizeDevHint(err.message);
+      } else {
+        setOptimizeDevHint(null);
+      }
+      logOptimizeClient("optimize_request_failed", {
+        promptId: prompt.id,
+        code: err instanceof ApiRequestError ? err.code ?? null : null,
+        status: err instanceof ApiRequestError ? err.status : null,
+        requestId: err instanceof ApiRequestError ? readRequestIdFromDetails(err.details) : null,
+      });
     } finally {
       setIsOptimizing(false);
     }
@@ -456,6 +553,18 @@ export function PromptDetailPanel({
       setIsExporting(false);
     }
   };
+
+  const optimizeStatusMessage =
+    optimizeState === "loading"
+      ? "Generating optimized prompt..."
+      : optimizeState === "success" && latestVersion
+        ? `Optimization succeeded at ${new Date(latestVersion.createdAt).toLocaleString()}. ${latestResultSkill.resultTitle} is now available below.`
+        : optimizeState === "error"
+          ? optimizeError ?? "Optimization failed."
+          : `No optimization has been run yet. Click "${optimizeActionLabel}" to generate the first result.`;
+
+  const optimizeStatusTone =
+    optimizeState === "error" ? "var(--error, #991b1b)" : "var(--muted, #6b7280)";
 
   return (
     <section style={{ display: "grid", gap: "12px" }}>
@@ -593,9 +702,21 @@ export function PromptDetailPanel({
                 void handleOptimize();
               }}
               disabled={!canOptimize || isOptimizing}
+              style={{ width: "100%" }}
             >
-              {isOptimizing ? "Optimizing..." : selectedSkill.optimizeLabel}
+              {isOptimizing ? "Generating optimized prompt..." : optimizeActionLabel}
             </button>
+            <p className="muted" style={{ marginTop: "6px", marginBottom: 0 }}>
+              {optimizeResultExpectation}
+            </p>
+            <p className="muted" style={{ marginTop: "8px", marginBottom: 0, color: optimizeStatusTone }}>
+              {optimizeStatusMessage}
+            </p>
+            {optimizeDevHint && process.env.NODE_ENV !== "production" ? (
+              <p className="muted" style={{ marginTop: "6px", marginBottom: 0 }}>
+                Dev hint: {optimizeDevHint}
+              </p>
+            ) : null}
             {!canOptimize ? <p className="muted" style={{ marginTop: "8px", marginBottom: 0 }}>Optimize requires optimize permission.</p> : null}
           </article>
 
@@ -642,6 +763,11 @@ export function PromptDetailPanel({
 
           <article className="editor-col">
             <h3 style={{ marginBottom: "8px" }}>{latestResultSkill.resultTitle}</h3>
+            <p className="muted" style={{ marginBottom: "8px" }}>
+              {latestResultSkill.skillKey === "workflow_spec"
+                ? "This panel shows the generated workflow spec prompt plus structured execution details."
+                : "This panel shows the latest optimized output and structured fields."}
+            </p>
             {latestVersion ? (
               <>
                 <p className="muted" style={{ marginBottom: "8px" }}>
@@ -688,10 +814,24 @@ export function PromptDetailPanel({
               </>
             ) : (
               <div className="card-block">
-                <p style={{ marginBottom: "6px" }}>No optimized versions yet.</p>
-                <p className="muted" style={{ marginBottom: 0 }}>
-                  {selectedSkill.emptyStateText}
-                </p>
+                {isOptimizing ? (
+                  <>
+                    <p style={{ marginBottom: "6px" }}>Generating optimized prompt...</p>
+                    <p className="muted" style={{ marginBottom: 0 }}>
+                      The result panel will update when optimization completes.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ marginBottom: "6px" }}>No optimized versions yet.</p>
+                    <p className="muted" style={{ marginBottom: 0 }}>
+                      {selectedSkill.emptyStateText}
+                    </p>
+                    <p className="muted" style={{ marginTop: "6px", marginBottom: 0 }}>
+                      Next step: click <strong>{optimizeActionLabel}</strong> to generate the first result.
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </article>
