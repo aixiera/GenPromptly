@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { SignInButton, SignUpButton, UserButton, useAuth } from "@clerk/nextjs";
 
 type HeaderProps = {
   onCreatePrompt?: () => void;
@@ -16,6 +16,8 @@ export function Header({
   createPromptMessage = null,
   createPromptError = null,
 }: HeaderProps) {
+  const { isSignedIn } = useAuth();
+
   return (
     <header className="topbar">
       <div>
@@ -24,12 +26,13 @@ export function Header({
       </div>
       <div className="topbar-actions-wrap">
         <div className="topbar-actions">
-          <SignedIn>
+          {isSignedIn ? (
             <Link href="/app" className="btn ghost" style={{ textDecoration: "none" }}>
               Workspace
             </Link>
-          </SignedIn>
-          <SignedOut>
+          ) : null}
+          {!isSignedIn ? (
+            <>
             <SignInButton mode="redirect">
               <button type="button" className="btn ghost">
                 Sign In
@@ -40,12 +43,13 @@ export function Header({
                 Create Account
               </button>
             </SignUpButton>
-          </SignedOut>
-          <SignedIn>
+            </>
+          ) : null}
+          {isSignedIn ? (
             <div style={{ display: "inline-flex", alignItems: "center" }}>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </div>
-          </SignedIn>
+          ) : null}
           <button
             type="button"
             className="btn primary"

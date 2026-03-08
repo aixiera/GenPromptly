@@ -78,7 +78,7 @@ export default async function OrgLayout({ children, params }: OrgLayoutProps) {
             <Link href="/classic" className="btn ghost" style={{ textDecoration: "none" }}>
               Legacy Classic View
             </Link>
-            <UserButton afterSignOutUrl="/" />
+            <UserButton />
           </div>
         </header>
         {children}
