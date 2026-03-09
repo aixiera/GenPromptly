@@ -45,8 +45,8 @@ export default async function PricingPage({ searchParams }: PricingPageProps) {
     <main style={{ minHeight: "100vh", padding: "24px", maxWidth: "1040px", margin: "0 auto" }}>
       <section className="panel">
         <h1 style={{ marginBottom: "8px" }}>Pricing</h1>
-        <p className="muted" style={{ marginBottom: "12px" }}>
-          Start free with {FREE_OPTIMIZE_LIMIT} successful optimizations. Upgrade to Plus for CA$
+        <p className="muted" style={{ marginBottom: "12px", fontWeight: 700 }}>
+          Free to try - {FREE_OPTIMIZE_LIMIT} successful optimizations included. Upgrade to Plus for CA$
           {PLUS_MONTHLY_PRICE_CAD}/month to continue.
         </p>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -92,7 +92,7 @@ export default async function PricingPage({ searchParams }: PricingPageProps) {
           </p>
           <ul style={{ marginBottom: "12px" }}>
             <li>Requires account registration</li>
-            <li>{FREE_OPTIMIZE_LIMIT} prompt optimizations total per account</li>
+            <li>{FREE_OPTIMIZE_LIMIT} prompt optimizations included per account</li>
             <li>Core prompt workflow experience</li>
             <li>Platform protections and fair use controls</li>
           </ul>
@@ -123,15 +123,38 @@ export default async function PricingPage({ searchParams }: PricingPageProps) {
             <li>Stripe-managed subscription and payment methods</li>
           </ul>
           {!isSignedIn ? (
-            <Link href="/sign-up" className="btn primary" style={{ textDecoration: "none" }}>
-              Sign Up to Upgrade
-            </Link>
+            <>
+              <Link href="/sign-up" className="btn primary" style={{ textDecoration: "none" }}>
+                Sign Up to Upgrade
+              </Link>
+              <p className="legal-callout" style={{ marginTop: "10px", marginBottom: 0 }}>
+                By subscribing, you agree to our{" "}
+                <Link href="/legal/terms">Terms of Service</Link>,{" "}
+                <Link href="/legal/privacy">Privacy Policy</Link>, and{" "}
+                <Link href="/legal/refund-cancellation">Refund / Cancellation Policy</Link>.
+              </p>
+            </>
           ) : isPlus ? (
             <BillingActionButton action="portal" label="Manage Billing" pendingLabel="Opening Portal..." />
           ) : (
-            <BillingActionButton action="checkout" label="Upgrade to Plus" pendingLabel="Opening Checkout..." />
+            <>
+              <BillingActionButton action="checkout" label="Upgrade to Plus" pendingLabel="Opening Checkout..." />
+              <p className="legal-callout" style={{ marginTop: "10px", marginBottom: 0 }}>
+                By subscribing, you agree to our{" "}
+                <Link href="/legal/terms">Terms of Service</Link>,{" "}
+                <Link href="/legal/privacy">Privacy Policy</Link>, and{" "}
+                <Link href="/legal/refund-cancellation">Refund / Cancellation Policy</Link>.
+              </p>
+            </>
           )}
         </article>
+      </section>
+
+      <section className="panel" style={{ marginBottom: 0 }}>
+        <p className="muted" style={{ margin: 0, fontSize: "13px", fontWeight: 700 }}>
+          Subscriptions renew automatically until canceled. All fees are non-refundable except where required by
+          applicable law.
+        </p>
       </section>
 
       {isSignedIn && billingSnapshot ? (

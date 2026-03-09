@@ -72,12 +72,19 @@ export default async function BillingPage({ params }: BillingPageProps) {
               className="btn primary"
             />
           ) : (
-            <BillingActionButton
-              action="checkout"
-              label="Upgrade to Plus"
-              pendingLabel="Opening Checkout..."
-              className="btn primary"
-            />
+            <>
+              <BillingActionButton
+                action="checkout"
+                label="Upgrade to Plus"
+                pendingLabel="Opening Checkout..."
+                className="btn primary"
+              />
+              <p className="legal-callout" style={{ margin: 0 }}>
+                By subscribing, you agree to our <Link href="/legal/terms">Terms of Service</Link>,{" "}
+                <Link href="/legal/privacy">Privacy Policy</Link>, and{" "}
+                <Link href="/legal/refund-cancellation">Refund / Cancellation Policy</Link>.
+              </p>
+            </>
           )}
           <Link href={`/app/${encodedSlug}/usage`} className="btn ghost" style={{ textDecoration: "none" }}>
             View Usage

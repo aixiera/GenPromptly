@@ -14,8 +14,8 @@ export default async function HomePage() {
         <p className="muted" style={{ marginBottom: "8px" }}>OpsForLocal Product</p>
         <h1 style={{ marginBottom: "8px" }}>GenPromptly</h1>
         <p className="muted" style={{ marginBottom: "14px", maxWidth: "760px" }}>
-          GenPromptly helps teams create, optimize, review, and ship production-grade prompts with
-          workflow-specific skill packs, compliance signals, and full auditability.
+          GenPromptly helps make prompts clearer, adds structure for common workflows, and supports review with
+          audit-friendly records.
         </p>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <Link href={startFreeHref} className="btn primary" style={{ textDecoration: "none" }}>
@@ -73,8 +73,13 @@ export default async function HomePage() {
 
       <section className="panel">
         <h2 style={{ marginBottom: "8px" }}>Plans</h2>
-        <p className="muted" style={{ marginBottom: "8px" }}>
-          Free: 8 successful optimizations per account. Plus: CA$10/month for ongoing optimization.
+        <p className="muted" style={{ marginBottom: "8px", fontWeight: 700 }}>
+          Free to try - 8 successful optimizations included per account. Plus is CA$10/month for ongoing
+          optimization.
+        </p>
+        <p className="legal-callout" style={{ marginBottom: "10px" }}>
+          Subscriptions renew automatically until canceled. All fees are non-refundable except where required by
+          applicable law.
         </p>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <Link href={startFreeHref} className="btn primary" style={{ textDecoration: "none" }}>

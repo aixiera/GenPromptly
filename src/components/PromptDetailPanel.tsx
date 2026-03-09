@@ -748,6 +748,10 @@ export function PromptDetailPanel({
                 placeholder={selectedSkill.defaultPlaceholder}
               />
             </label>
+            <p className="input-safety-callout">
+              Please do not submit confidential, highly sensitive, or legally protected information unless necessary and
+              authorized.
+            </p>
                 <button
                   type="button"
                   className="btn ghost"

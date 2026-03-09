@@ -537,6 +537,28 @@ pre { margin: 0; border: 1px solid var(--line); border-radius: 10px; background:
   text-decoration: underline;
 }
 
+.legal-callout {
+  border: 1px solid color-mix(in srgb, #9f5b18 45%, var(--line) 55%);
+  background: color-mix(in srgb, #fff7ed 88%, #ffffff 12%);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.input-safety-callout {
+  border: 2px solid color-mix(in srgb, #8a4b12 52%, var(--line) 48%);
+  background: color-mix(in srgb, #ffedd5 90%, #ffffff 10%);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0 10px 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.55;
+  color: color-mix(in srgb, #6c2e00 80%, var(--text) 20%);
+}
+
 @keyframes panel-in {
   from {
     transform: translateY(6px);

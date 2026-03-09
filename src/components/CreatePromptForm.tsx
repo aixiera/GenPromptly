@@ -67,6 +67,10 @@ export function CreatePromptForm({ projectId, orgSlug }: CreatePromptFormProps) 
         onChange={(event) => setRawPrompt(event.target.value)}
         style={{ marginBottom: 0 }}
       />
+      <p className="input-safety-callout" style={{ marginTop: 0 }}>
+        Please do not submit confidential, highly sensitive, or legally protected information unless necessary and
+        authorized.
+      </p>
       <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
         <button type="submit" className="btn primary" disabled={isSubmitting}>
           {isSubmitting ? "Creating..." : "Create Prompt"}

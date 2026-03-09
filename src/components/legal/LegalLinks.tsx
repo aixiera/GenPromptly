@@ -11,6 +11,7 @@ export function LegalLinks({ className, compact = false }: LegalLinksProps) {
     <div className={className ?? "legal-links"} style={{ fontSize: compact ? "12px" : "13px" }}>
       <Link href="/legal/privacy">Privacy Policy</Link>
       <Link href="/legal/terms">Terms of Service</Link>
+      <Link href="/legal/refund-cancellation">Refund / Cancellation Policy</Link>
       <a href={legalContactHref} title={legalContactEmail}>
         Contact
       </a>

@@ -285,6 +285,10 @@ export function PromptCreateFlow({
             placeholder={skill.defaultPlaceholder}
           />
         </label>
+        <p className="input-safety-callout" style={{ marginTop: 0 }}>
+          Please do not submit confidential, highly sensitive, or legally protected information unless necessary and
+          authorized.
+        </p>
 
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <button type="submit" className="btn ghost" disabled={isSavingDraft || isSavingAndOptimizing}>
