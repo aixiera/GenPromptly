@@ -11,7 +11,7 @@ export default async function HomePage() {
   return (
     <main style={{ minHeight: "100vh", padding: "24px", maxWidth: "1080px", margin: "0 auto" }}>
       <section className="panel">
-        <p className="muted" style={{ marginBottom: "8px" }}>OpsForLocal Product</p>
+        <p className="muted" style={{ marginBottom: "8px" }}>Operated by Kairui Bi</p>
         <h1 style={{ marginBottom: "8px" }}>GenPromptly</h1>
         <p className="muted" style={{ marginBottom: "14px", maxWidth: "760px" }}>
           GenPromptly helps make prompts clearer, adds structure for common workflows, and supports review with

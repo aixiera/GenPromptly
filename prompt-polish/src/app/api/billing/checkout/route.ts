@@ -21,6 +21,22 @@ function isStripeMissingCustomerError(err: unknown): boolean {
   return type === "StripeInvalidRequestError" && code === "resource_missing";
 }
 
+function toStripeHttpError(err: unknown): HttpError | null {
+  if (!err || typeof err !== "object") {
+    return null;
+  }
+  const type = (err as { type?: unknown }).type;
+  const message = (err as { message?: unknown }).message;
+  if (typeof type !== "string" || !type.startsWith("Stripe")) {
+    return null;
+  }
+  return new HttpError(
+    502,
+    "STRIPE_API_ERROR",
+    typeof message === "string" && message.trim() ? message.trim() : "Stripe checkout could not be created."
+  );
+}
+
 async function createStripeCustomer(stripe: Stripe, user: AuthenticatedAppUser, userPlan: UserPlan): Promise<string> {
   const customer = await stripe.customers.create({
     email: user.email,
@@ -139,6 +155,12 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     if (err instanceof HttpError) {
       return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });
+    }
+    const stripeError = toStripeHttpError(err);
+    if (stripeError) {
+      return NextResponse.json(error(stripeError.code, stripeError.message, stripeError.details), {
+        status: stripeError.status,
+      });
     }
     const infraError = toInfraHttpError(err, "api.billing.checkout.post");
     if (infraError) {
