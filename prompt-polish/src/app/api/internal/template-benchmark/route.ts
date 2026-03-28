@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import prisma from "../../../../lib/db";
 import { optimizePrompt } from "../../../../lib/ai/optimizer";
+import { HttpError } from "../../../../lib/api/httpError";
 import { error, success } from "../../../../lib/api/response";
+import { logUnhandledApiError, toInfraHttpError } from "../../../../lib/api/errorDiagnostics";
+import { requireAuthContext } from "../../../../lib/auth/server";
+import { requirePermission } from "../../../../lib/rbac";
+import { isOpenAiConfigured } from "../../../../lib/config/runtime";
+import { enforceRateLimit } from "../../../../lib/security/rateLimit";
+import { FREE_OPTIMIZE_LIMIT, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE } from "../../../../lib/billing/constants";
+import { consumeFreeOptimizeQuotaIfAvailable, getOptimizeAccessDecision } from "../../../../lib/billing/plan";
 
 export const runtime = "nodejs";
 
@@ -70,62 +78,114 @@ function toCompositeScore(scores: {
   return average([scores.clarity, scores.context, scores.constraints, scores.format]);
 }
 
-export async function GET() {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json(error("INTERNAL_ERROR", "Missing OPENAI_API_KEY"), { status: 500 });
+export async function GET(req: Request) {
+  if (!isOpenAiConfigured()) {
+    return NextResponse.json(error("SERVICE_UNAVAILABLE", "Optimizer is not configured yet"), { status: 503 });
   }
 
   try {
-    const templates = await prisma.template.findMany({
-      where: {
-        key: {
-          in: [...TEMPLATE_KEYS],
+    const auth = await requireAuthContext(req);
+    requirePermission(auth, "benchmark_template");
+    const optimizeAccess = await getOptimizeAccessDecision(auth.userId);
+    if (!optimizeAccess.allowOptimize) {
+      return NextResponse.json(
+        error(UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+          freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+          freeOptimizeUsed: optimizeAccess.freeOptimizeUsed,
+          freeOptimizeRemaining: optimizeAccess.freeOptimizeRemaining,
+        }),
+        { status: 402 }
+      );
+    }
+    const rateLimitDecision = await enforceRateLimit(
+      req,
+      "internalBenchmark",
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        action: "template-benchmark",
+      },
+      "api.internal.template-benchmark.get"
+    );
+    if (!rateLimitDecision.ok) {
+      return rateLimitDecision.response;
+    }
+    try {
+
+      const templates = await prisma.template.findMany({
+        where: {
+          key: {
+            in: [...TEMPLATE_KEYS],
+          },
         },
-      },
-      select: {
-        key: true,
-        systemPrompt: true,
-      },
-    });
+        select: {
+          key: true,
+          systemPrompt: true,
+        },
+      });
 
-    const templateMap = new Map(templates.map((template) => [template.key, template.systemPrompt]));
-    const rows: BenchmarkRow[] = [];
+      const templateMap = new Map(templates.map((template) => [template.key, template.systemPrompt]));
+      const rows: BenchmarkRow[] = [];
 
-    for (const templateKey of TEMPLATE_KEYS) {
-      const templatePrompt = templateMap.get(templateKey) ?? null;
-      if (!templatePrompt) {
+      for (const templateKey of TEMPLATE_KEYS) {
+        const templatePrompt = templateMap.get(templateKey) ?? null;
+        if (!templatePrompt) {
+          rows.push({
+            templateKey,
+            avgScore: 0,
+            testedCases: 0,
+          });
+          continue;
+        }
+
+        const testCases = BENCHMARK_CASES[templateKey];
+        const scores: number[] = [];
+
+        for (const testInput of testCases) {
+          try {
+            const result = await optimizePrompt(testInput, "clarity", undefined, templatePrompt);
+            scores.push(toCompositeScore(result.scores));
+            if (!optimizeAccess.isPlusActive) {
+              const consumedFreeQuota = await consumeFreeOptimizeQuotaIfAvailable(auth.userId);
+              if (!consumedFreeQuota) {
+                throw new HttpError(402, UPGRADE_REQUIRED_CODE, UPGRADE_REQUIRED_MESSAGE, {
+                  freeOptimizeLimit: FREE_OPTIMIZE_LIMIT,
+                });
+              }
+            }
+          } catch (benchmarkError: unknown) {
+            if (benchmarkError instanceof HttpError && benchmarkError.code === UPGRADE_REQUIRED_CODE) {
+              throw benchmarkError;
+            }
+            console.error("Template benchmark case failed", {
+              templateKey,
+              message: benchmarkError instanceof Error ? benchmarkError.message : String(benchmarkError),
+            });
+          }
+        }
+
         rows.push({
           templateKey,
-          avgScore: 0,
-          testedCases: 0,
+          avgScore: Number(average(scores).toFixed(2)),
+          testedCases: testCases.length,
         });
-        continue;
       }
 
-      const testCases = BENCHMARK_CASES[templateKey];
-      const scores: number[] = [];
-
-      for (const testInput of testCases) {
-        try {
-          const result = await optimizePrompt(testInput, "clarity", undefined, templatePrompt);
-          scores.push(toCompositeScore(result.scores));
-        } catch (benchmarkError: unknown) {
-          console.error("Template benchmark case failed", {
-            templateKey,
-            message: benchmarkError instanceof Error ? benchmarkError.message : String(benchmarkError),
-          });
-        }
-      }
-
-      rows.push({
-        templateKey,
-        avgScore: Number(average(scores).toFixed(2)),
-        testedCases: testCases.length,
+      return NextResponse.json(success(rows), { status: 200 });
+    } finally {
+      rateLimitDecision.release?.();
+    }
+  } catch (err: unknown) {
+    if (err instanceof HttpError) {
+      return NextResponse.json(error(err.code, err.message, err.details), { status: err.status });
+    }
+    const infraError = toInfraHttpError(err, "api.internal.template-benchmark.get");
+    if (infraError) {
+      return NextResponse.json(error(infraError.code, infraError.message, infraError.details), {
+        status: infraError.status,
       });
     }
-
-    return NextResponse.json(success(rows), { status: 200 });
-  } catch {
+    logUnhandledApiError("api.internal.template-benchmark.get", err);
     return NextResponse.json(error("INTERNAL_ERROR", "Failed to run template benchmark"), { status: 500 });
   }
 }

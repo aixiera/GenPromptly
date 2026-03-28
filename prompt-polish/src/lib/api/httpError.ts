@@ -19,6 +19,27 @@ export class BadRequestError extends HttpError {
   }
 }
 
+export class UnauthorizedError extends HttpError {
+  constructor(message = "Unauthorized", details?: unknown, code = "UNAUTHORIZED") {
+    super(401, code, message, details);
+    this.name = "UnauthorizedError";
+  }
+}
+
+export class ForbiddenError extends HttpError {
+  constructor(message = "Forbidden", details?: unknown, code = "FORBIDDEN") {
+    super(403, code, message, details);
+    this.name = "ForbiddenError";
+  }
+}
+
+export class ConflictError extends HttpError {
+  constructor(message = "Conflict", details?: unknown, code = "CONFLICT") {
+    super(409, code, message, details);
+    this.name = "ConflictError";
+  }
+}
+
 export class NotFoundError extends HttpError {
   constructor(message = "Resource not found", details?: unknown, code = "NOT_FOUND") {
     super(404, code, message, details);

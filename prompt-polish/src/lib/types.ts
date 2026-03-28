@@ -3,17 +3,33 @@ export type Project = {
   name: string;
   createdAt: string;
   updatedAt: string;
-  orgId?: string | null;
+  orgId: string;
 };
 
 export type Prompt = {
   id: string;
   projectId: string;
+  orgId: string;
   templateId?: string | null;
   title: string;
   rawPrompt: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PromptListItem = Prompt & {
+  project: {
+    id: string;
+    name: string;
+  } | null;
+  template: {
+    id: string;
+    key: string;
+    name: string;
+  } | null;
+  versionCount: number;
+  latestOptimizeAt: string | null;
+  recentOptimizeStatus: "NOT_RUN" | "PASS" | "WARN";
 };
 
 export type Template = {
@@ -46,11 +62,18 @@ export type OptimizeResult = {
 export type PromptVersion = {
   id: string;
   promptId: string;
+  orgId: string;
   optimizedPrompt: string;
   keyChanges: string[];
+  recommendations?: string[];
   scores: OptimizeScores;
   missingFields: string[];
   riskFlags: string[];
+  structure?: Record<string, unknown>;
+  structuredData?: Record<string, unknown>;
+  skillKey?: string | null;
+  toolKey?: string | null;
+  workflowProfile?: string | null;
   mode: string;
   model: string;
   createdAt: string;

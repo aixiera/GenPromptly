@@ -2,9 +2,66 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const connectionString = process.env.DATABASE_URL ?? "";
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim();
+  if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function normalizeConnectionString(raw: string): string {
+  const unquoted = stripWrappingQuotes(raw);
+  if (!unquoted) {
+    return "";
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(unquoted);
+  } catch {
+    return unquoted;
+  }
+
+  if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
+    return unquoted;
+  }
+
+  const sslmode = parsed.searchParams.get("sslmode");
+  const hasLibpqCompat = parsed.searchParams.get("uselibpqcompat");
+  if (!hasLibpqCompat && (sslmode === "prefer" || sslmode === "require" || sslmode === "verify-ca")) {
+    parsed.searchParams.set("uselibpqcompat", "true");
+  }
+
+  if (parsed.searchParams.get("channel_binding") === "require") {
+    parsed.searchParams.delete("channel_binding");
+  }
+
+  return parsed.toString();
+}
+
+function resolveConnectionString(): string {
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  const directUrl = process.env.DIRECT_URL ?? "";
+  const forcePooler = process.env.PRISMA_FORCE_POOLER === "true";
+  const preferDirect = process.env.PRISMA_PREFER_DIRECT === "true";
+  const normalizedDatabase = normalizeConnectionString(databaseUrl);
+  const normalizedDirect = normalizeConnectionString(directUrl);
+
+  if (forcePooler) {
+    return normalizedDatabase || normalizedDirect;
+  }
+
+  if (preferDirect && normalizedDirect) {
+    return normalizedDirect;
+  }
+
+  return normalizedDatabase || normalizedDirect;
+}
+
+const connectionString = resolveConnectionString();
 if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run seeds.");
+  throw new Error("DATABASE_URL or DIRECT_URL is required to run seeds.");
 }
 
 const adapter = new PrismaPg({ connectionString });
@@ -724,6 +781,83 @@ Quality rules:
   },
 ] as const;
 
+function toSeedOrgSlug(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "default-workspace";
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+async function seedInitialWorkspace() {
+  const rawEmail = process.env.SEED_ADMIN_EMAIL ?? process.env.AUTH_DEV_USER_EMAIL;
+  const rawClerkUserId = process.env.SEED_CLERK_USER_ID;
+
+  if (!rawEmail || !rawClerkUserId) {
+    console.log("Skipped bootstrap user/org seed (SEED_ADMIN_EMAIL and SEED_CLERK_USER_ID not set).");
+    return;
+  }
+
+  const email = normalizeEmail(rawEmail);
+  const clerkUserId = rawClerkUserId.trim();
+  const name = process.env.SEED_ADMIN_NAME?.trim() || "Workspace Owner";
+  const orgName = process.env.SEED_ORG_NAME?.trim() || "Default Workspace";
+  const orgSlug = toSeedOrgSlug(orgName);
+
+  await prisma.$transaction(async (tx) => {
+    const organization = await tx.organization.upsert({
+      where: { slug: orgSlug },
+      update: {
+        name: orgName,
+      },
+      create: {
+        name: orgName,
+        slug: orgSlug,
+      },
+    });
+
+    const user = await tx.user.upsert({
+      where: { clerkUserId },
+      update: {
+        email,
+        name,
+        lastActiveOrgId: organization.id,
+      },
+      create: {
+        clerkUserId,
+        email,
+        name,
+        lastActiveOrgId: organization.id,
+      },
+    });
+
+    await tx.membership.upsert({
+      where: {
+        orgId_userId: {
+          userId: user.id,
+          orgId: organization.id,
+        },
+      },
+      update: {
+        role: "OWNER",
+      },
+      create: {
+        userId: user.id,
+        orgId: organization.id,
+        role: "OWNER",
+      },
+    });
+  });
+
+  console.log(`Seeded bootstrap workspace "${orgName}" with owner ${email}.`);
+}
+
 async function main() {
   for (const template of starterTemplates) {
     await prisma.template.upsert({
@@ -747,6 +881,7 @@ async function main() {
   }
 
   console.log(`Seeded ${starterTemplates.length} starter templates.`);
+  await seedInitialWorkspace();
 }
 
 main()

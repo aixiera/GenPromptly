@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../apiClient";
+import { apiGet, getApiErrorMessage } from "../apiClient";
 import type { DashboardSummary } from "../types";
 
 type UseDashboardSummaryResult = {
@@ -22,7 +22,7 @@ export function useDashboardSummary(): UseDashboardSummaryResult {
       const result = await apiGet<DashboardSummary>("/api/dashboard/summary");
       setData(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch dashboard summary");
+      setError(getApiErrorMessage(err, "Unable to load dashboard summary"));
     } finally {
       setIsLoading(false);
     }

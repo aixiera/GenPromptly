@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../apiClient";
+import { apiGet, getApiErrorMessage } from "../apiClient";
 import type { Prompt } from "../types";
 
 type UsePromptsResult = {
@@ -31,7 +31,7 @@ export function usePrompts(projectId: string | null | undefined): UsePromptsResu
       );
       setData(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch prompts");
+      setError(getApiErrorMessage(err, "Unable to load prompts"));
     } finally {
       setIsLoading(false);
     }

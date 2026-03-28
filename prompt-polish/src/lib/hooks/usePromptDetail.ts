@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../apiClient";
+import { apiGet, getApiErrorMessage } from "../apiClient";
 import type { Prompt, PromptVersion } from "../types";
 
 type PromptDetail = Prompt & {
@@ -33,7 +33,7 @@ export function usePromptDetail(promptId: string | null | undefined): UsePromptD
       const result = await apiGet<PromptDetail>(`/api/prompts/${encodeURIComponent(promptId)}`);
       setData(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to fetch prompt details");
+      setError(getApiErrorMessage(err, "Unable to load prompt details"));
     } finally {
       setIsLoading(false);
     }

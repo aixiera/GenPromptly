@@ -14,6 +14,55 @@ type ApiError = {
 
 type ApiEnvelope<T> = ApiSuccess<T> | ApiError;
 
+const ACTIVE_ORG_STORAGE_KEY = "prompt_polish_active_org_id";
+
+function canUseStorage(): boolean {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readActiveOrgId(): string | null {
+  if (!canUseStorage()) {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+  const orgId = raw?.trim();
+  return orgId || null;
+}
+
+function readRetryAfterSeconds(details: unknown): number | null {
+  if (!isObject(details)) {
+    return null;
+  }
+  const candidates = [
+    (details as Record<string, unknown>).retryAfterSeconds,
+    (details as Record<string, unknown>).retryAfter,
+  ];
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.ceil(parsed);
+    }
+  }
+  return null;
+}
+
+export function setActiveOrg(activeOrgId: string): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, activeOrgId);
+}
+
+export function clearActiveOrg(): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
+}
+
 export class ApiRequestError extends Error {
   status: number;
   code?: string;
@@ -31,7 +80,14 @@ export class ApiRequestError extends Error {
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 429 || error.code === "RATE_LIMITED") {
+      const retryAfterSeconds = readRetryAfterSeconds(error.details);
+      if (retryAfterSeconds) {
+        return `Too many requests. Please wait ${retryAfterSeconds}s and try again.`;
+      }
       return "Too many requests. Try again in a minute.";
+    }
+    if (error.code === "UPGRADE_REQUIRED") {
+      return `${error.message} Visit Pricing to upgrade.`;
     }
     return error.message || fallback;
   }
@@ -81,11 +137,14 @@ async function parseJsonResponse(response: Response, url: string): Promise<unkno
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const activeOrgId = readActiveOrgId();
+
   const response = await fetch(url, {
     ...init,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...(activeOrgId ? { "x-org-id": activeOrgId } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -107,6 +166,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const envelope: ApiEnvelope<T> = parsed;
 
   if (envelope.ok === false) {
+    if (
+      activeOrgId &&
+      (envelope.error.code === "ORG_NOT_FOUND" || envelope.error.code === "ORG_NOT_ACCESSIBLE")
+    ) {
+      clearActiveOrg();
+      return request<T>(url, init);
+    }
+
     throw new ApiRequestError(
       envelope.error.message,
       response.status,
@@ -116,6 +183,78 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return envelope.data;
+}
+
+function parseFilenameFromDisposition(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const utfMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1]);
+    } catch {
+      return utfMatch[1];
+    }
+  }
+  const quotedMatch = header.match(/filename=\"([^\"]+)\"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  const plainMatch = header.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() ?? null;
+}
+
+export function triggerBrowserDownload(blob: Blob, filename: string): void {
+  const blobUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
+export async function apiDownload(url: string): Promise<{ blob: Blob; filename: string | null }> {
+  const activeOrgId = readActiveOrgId();
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json,text/csv,*/*",
+      ...(activeOrgId ? { "x-org-id": activeOrgId } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (isApiError(parsed)) {
+          throw new ApiRequestError(
+            parsed.error.message,
+            response.status,
+            parsed.error.code,
+            parsed.error.details
+          );
+        }
+      } catch (error: unknown) {
+        if (error instanceof ApiRequestError) {
+          throw error;
+        }
+      }
+    }
+    if (response.status === 429) {
+      throw new ApiRequestError("Too many requests. Try again in a minute.", 429, "RATE_LIMITED");
+    }
+    throw new ApiRequestError(`Request failed (${response.status})`, response.status);
+  }
+
+  const blob = await response.blob();
+  const filename = parseFilenameFromDisposition(response.headers.get("content-disposition"));
+  return { blob, filename };
 }
 
 export async function apiGet<T>(url: string): Promise<T> {
@@ -136,6 +275,9 @@ export async function apiPatch<T>(url: string, body: unknown): Promise<T> {
   });
 }
 
-export async function apiDelete<T>(url: string): Promise<T> {
-  return request<T>(url, { method: "DELETE" });
+export async function apiDelete<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "DELETE",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
 }

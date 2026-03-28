@@ -1,20 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "GenPromptly",
-  description: "Compliance-first prompt generator app",
+  title: {
+    default: "GenPromptly",
+    template: "%s | GenPromptly",
+  },
+  description: "GenPromptly is a B2B prompt operations platform operated by OpsForLocal.",
+  icons: {
+    icon: "/genpromptly-icon.png",
+    apple: "/genpromptly-icon.png",
+    shortcut: "/genpromptly-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -24,10 +22,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className="antialiased">
+        <ClerkProvider>{children}</ClerkProvider>
       </body>
     </html>
   );
