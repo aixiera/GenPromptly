@@ -4,14 +4,14 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "GenPromptly",
-    template: "%s | GenPromptly",
+    default: "Kairui Bi",
+    template: "%s",
   },
-  description: "GenPromptly is an AI-assisted prompt optimization platform operated by Kairui Bi.",
+  description: "Kairui Bi builds practical AI tools, automation systems, and digital products for real use cases.",
   icons: {
-    icon: "/genpromptly-icon.png",
-    apple: "/genpromptly-icon.png",
-    shortcut: "/genpromptly-icon.png",
+    icon: "/site/site-monogram.svg",
+    apple: "/site/site-monogram.svg",
+    shortcut: "/site/site-monogram.svg",
   },
 };
 

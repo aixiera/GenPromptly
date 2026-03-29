@@ -9,11 +9,11 @@ export default function RootNotFoundPage() {
           The page you requested is unavailable or has moved.
         </p>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <Link href="/app" className="btn primary" style={{ textDecoration: "none" }}>
-            Open Workspace
-          </Link>
-          <Link href="/" className="btn ghost" style={{ textDecoration: "none" }}>
+          <Link href="/" className="btn primary" style={{ textDecoration: "none" }}>
             Go Home
+          </Link>
+          <Link href="/app" className="btn ghost" style={{ textDecoration: "none" }}>
+            Open Workspace
           </Link>
         </div>
       </section>
