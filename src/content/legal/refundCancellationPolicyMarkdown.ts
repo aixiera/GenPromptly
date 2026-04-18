@@ -1,2 +1,67 @@
-﻿export const refundCancellationPolicyMarkdown = "# Refund / Cancellation Policy\n\n**Effective Date:** March 9, 2026\n\nThis Refund / Cancellation Policy applies to subscriptions and paid services purchased for **GenPromptly**, a product operated by **Kairui Bi, carrying on business as OpsForLocal** (“OpsForLocal,” “we,” “us,” or “our”).\n\n## 1. General Rule: No Refunds\n\n**Except where required by applicable law, all purchases and subscription fees are final and non-refundable.**\n\nBecause GenPromptly is an AI-assisted software service and access is made available immediately or on an ongoing basis after purchase:\n- we do not offer refunds for change of mind;\n- we do not offer refunds because a user no longer wants the service;\n- we do not offer refunds because AI-generated outputs are variable, imperfect, incomplete, or not satisfactory to the user;\n- we do not offer refunds for unused time, unused usage allowances, or partial billing periods;\n- we do not offer prorated refunds after a billing period has started.\n\nBy purchasing a paid plan, you acknowledge that GenPromptly uses probabilistic AI systems and that outputs may vary in quality, usefulness, and accuracy.\n\n## 2. Limited Exceptions\n\nWe may, in our sole discretion, review and correct:\n- duplicate charges;\n- proven billing errors;\n- charges made after a properly submitted cancellation should have taken effect;\n- any refund required by applicable law.\n\nAny goodwill refund or billing adjustment we choose to provide in one case does not obligate us to provide one in any other case.\n\n## 3. Cancellation\n\nYou may cancel your subscription at any time through:\n- the billing portal;\n- your account settings, if available; or\n- by contacting **opsforlocal@gmail.com**.\n\nUnless applicable law requires otherwise:\n- cancellation stops future renewal charges;\n- cancellation does not reverse charges already paid;\n- cancellation takes effect at the end of the current billing period;\n- you may continue using the paid plan until the end of the current billing period.\n\n## 4. Non-Payment and Failed Charges\n\nIf a payment fails or your payment method cannot be charged, we may:\n- retry the charge;\n- suspend paid access;\n- downgrade your account;\n- cancel your subscription.\n\n## 5. Account Deletion\n\nDeleting your account does **not automatically cancel** an active paid subscription unless the cancellation flow explicitly confirms cancellation.\n\nIf you want to avoid future charges, make sure you complete the cancellation process before deleting your account.\n\n## 6. Contact\n\nFor billing or cancellation questions, contact:\n\n**OpsForLocal / GenPromptly**  \nSupport: **opsforlocal@gmail.com**  \nGeneral contact: **opsforlocal@gmail.com**\r\n";
+import { legalCompanyName, legalContactEmail } from "../../lib/legal";
 
+export const refundCancellationPolicyMarkdown = `# Refund / Cancellation Policy
+
+**Effective Date:** April 17, 2026
+
+This Refund / Cancellation Policy applies to subscriptions and paid services purchased for **GenPromptly**, a product operated by **${legalCompanyName}** ("we," "us," or "our").
+
+## 1. General Rule: No Refunds
+
+**Except where required by applicable law, all purchases and subscription fees are final and non-refundable.**
+
+Because GenPromptly is an AI-assisted software service and access is made available immediately or on an ongoing basis after purchase:
+- we do not offer refunds for change of mind;
+- we do not offer refunds because a user no longer wants the service;
+- we do not offer refunds because AI-generated outputs are variable, imperfect, incomplete, or not satisfactory to the user;
+- we do not offer refunds for unused time, unused usage allowances, or partial billing periods;
+- we do not offer prorated refunds after a billing period has started.
+
+By purchasing a paid plan, you acknowledge that GenPromptly uses probabilistic AI systems and that outputs may vary in quality, usefulness, and accuracy.
+
+## 2. Limited Exceptions
+
+We may, in our sole discretion, review and correct:
+- duplicate charges;
+- proven billing errors;
+- charges made after a properly submitted cancellation should have taken effect;
+- any refund required by applicable law.
+
+Any goodwill refund or billing adjustment we choose to provide in one case does not obligate us to provide one in any other case.
+
+## 3. Cancellation
+
+You may cancel your subscription at any time through:
+- the billing portal;
+- your account settings, if available; or
+- by contacting **${legalContactEmail}**.
+
+Unless applicable law requires otherwise:
+- cancellation stops future renewal charges;
+- cancellation does not reverse charges already paid;
+- cancellation takes effect at the end of the current billing period;
+- you may continue using the paid plan until the end of the current billing period.
+
+## 4. Non-Payment and Failed Charges
+
+If a payment fails or your payment method cannot be charged, we may:
+- retry the charge;
+- suspend paid access;
+- downgrade your account;
+- cancel your subscription.
+
+## 5. Account Deletion
+
+Deleting your account does **not automatically cancel** an active paid subscription unless the cancellation flow explicitly confirms cancellation.
+
+If you want to avoid future charges, make sure you complete the cancellation process before deleting your account.
+
+## 6. Contact
+
+For billing or cancellation questions, contact:
+
+**GenPromptly**  
+Operated by: **${legalCompanyName}**  
+Support: **${legalContactEmail}**  
+General contact: **${legalContactEmail}**
+`;

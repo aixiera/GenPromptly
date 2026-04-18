@@ -1,19 +1,16 @@
-export const legalCompanyName =
-  process.env.NEXT_PUBLIC_LEGAL_COMPANY_NAME?.trim() || "OpsForLocal";
+export const legalCompanyName = "Kairui Bi";
 
-export const legalContactEmail =
-  process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim() || "opsforlocal@gmail.com";
+export const legalContactEmail = "bia446635@gmail.com";
 
 export const legalContactHref = `mailto:${legalContactEmail}`;
 
-export const privacyEffectiveDate = "Effective Date: March 5, 2026";
-export const privacyLastUpdated = "Last Updated: March 5, 2026";
+export const privacyEffectiveDate = "Effective Date: April 17, 2026";
+export const privacyLastUpdated = "Last Updated: April 17, 2026";
 
-export const termsContactEmail =
-  process.env.NEXT_PUBLIC_TERMS_CONTACT_EMAIL?.trim() || legalContactEmail;
+export const termsContactEmail = legalContactEmail;
 
-export const termsEffectiveDate = "Effective Date: March 5, 2026";
-export const termsLastUpdated = "Last Updated: March 5, 2026";
+export const termsEffectiveDate = "Effective Date: April 17, 2026";
+export const termsLastUpdated = "Last Updated: April 17, 2026";
 
 export const governingLawVenueClause =
   process.env.NEXT_PUBLIC_LEGAL_GOVERNING_LAW?.trim() ||

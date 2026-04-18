@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     default: "GenPromptly",
     template: "%s | GenPromptly",
   },
-  description: "GenPromptly is a B2B prompt operations platform operated by OpsForLocal.",
+  description: "GenPromptly is a B2B prompt operations platform operated by Kairui Bi.",
   icons: {
     icon: "/genpromptly-icon.png",
     apple: "/genpromptly-icon.png",

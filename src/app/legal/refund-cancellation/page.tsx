@@ -6,7 +6,7 @@ import { refundCancellationPolicyMarkdown } from "../../../content/legal/refundC
 export const metadata: Metadata = {
   title: "Refund / Cancellation Policy | GenPromptly",
   description:
-    "Refund / Cancellation Policy for GenPromptly, a B2B SaaS prompt operations platform operated by OpsForLocal.",
+    "Refund / Cancellation Policy for GenPromptly, a B2B SaaS prompt operations platform operated by Kairui Bi.",
 };
 
 export default function RefundCancellationPolicyPage() {

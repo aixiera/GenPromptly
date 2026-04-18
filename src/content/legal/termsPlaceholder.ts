@@ -186,7 +186,7 @@ export const termsOfServiceSections: LegalSection[] = [
     blocks: [
       {
         type: "paragraph",
-        text: "To the fullest extent permitted by law, OpsForLocal and its affiliates, officers, employees, and service providers will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of profits, data, goodwill, or business opportunities.",
+        text: `To the fullest extent permitted by law, ${legalCompanyName} and its affiliates, officers, employees, and service providers will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of profits, data, goodwill, or business opportunities.`,
       },
       {
         type: "paragraph",
@@ -200,7 +200,7 @@ export const termsOfServiceSections: LegalSection[] = [
     blocks: [
       {
         type: "paragraph",
-        text: "You agree to indemnify and hold harmless OpsForLocal from third-party claims, damages, and reasonable costs (including legal fees) arising from your use of the Service, your customer content, or your violation of these Terms, to the extent permitted by applicable law.",
+        text: `You agree to indemnify and hold harmless ${legalCompanyName} from third-party claims, damages, and reasonable costs (including legal fees) arising from your use of the Service, your customer content, or your violation of these Terms, to the extent permitted by applicable law.`,
       },
     ],
   },

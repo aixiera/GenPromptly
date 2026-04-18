@@ -1,6 +1,6 @@
 # GenPromptly
 
-GenPromptly is a B2B SaaS prompt operations platform operated by OpsForLocal.
+GenPromptly is a B2B SaaS prompt operations platform operated by Kairui Bi.
 
 ## Stack
 

@@ -22,7 +22,7 @@ export function Header({
     <header className="topbar">
       <div>
         <h1>GenPromptly</h1>
-        <p>Prompt operations platform by OpsForLocal</p>
+        <p>Prompt operations platform by Kairui Bi</p>
       </div>
       <div className="topbar-actions-wrap">
         <div className="topbar-actions">

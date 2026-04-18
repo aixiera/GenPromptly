@@ -1,2 +1,176 @@
-﻿export const privacyPolicyMarkdown = "# Privacy Policy\n\n**Effective Date:** March 9, 2026\n\nThis Privacy Policy explains how **Kairui Bi, carrying on business as OpsForLocal** (“**OpsForLocal**,” “**we**,” “**us**,” or “**our**”) collects, uses, discloses, stores, and safeguards personal information in connection with **GenPromptly**.\n\n**GenPromptly is a product and brand operated by OpsForLocal and is not a separate legal entity.** When this Policy refers to “GenPromptly,” it refers to the GenPromptly website, app, related pages, and related services operated by OpsForLocal.\n\nBy using GenPromptly, creating an account, submitting prompts, or purchasing a subscription, you acknowledge that you have read this Privacy Policy.\n\n## 1. What GenPromptly does\n\nGenPromptly helps users turn rough prompts into clearer, more structured prompts. To provide this service, we may send all or part of a user’s submitted prompt, together with system instructions and relevant processing context, to third-party service providers, including the OpenAI API, to generate an optimized output.\n\nGenPromptly is an AI-assisted tool. It does not guarantee factual accuracy, completeness, or suitability for any particular purpose.\n\n## 2. Information we collect\n\nWe may collect the following categories of information:\n\n### A. Account and identity information\n- Name\n- Email address\n- Account identifiers\n- Authentication-related metadata\n\n### B. Billing and subscription information\n- Customer ID\n- Subscription status\n- Plan type\n- Billing country or region\n- Limited payment-related metadata provided by our payment processor\n\nWe do **not** directly store full payment card numbers on our own servers.\n\n### C. Prompt and usage information\n- Prompts you submit\n- Outputs returned by the service\n- Usage counts\n- Feature interaction data\n- Error reports\n- Support messages you send us\n\n### D. Technical information\n- IP address\n- Browser type\n- Device information\n- Operating system\n- Log data\n- Analytics and cookie-related data\n\n## 3. How we collect information\n\nWe collect information:\n- directly from you when you create an account, submit prompts, contact support, or purchase a subscription;\n- automatically when you use the website or app;\n- from service providers that help us operate the service, such as authentication, hosting, database, analytics, AI, and payment providers.\n\n## 4. Why we use information\n\nWe use personal information to:\n- create and manage your account;\n- provide GenPromptly’s prompt optimization service;\n- authenticate users and secure accounts;\n- process subscriptions and manage billing;\n- monitor usage limits, abuse, fraud, and technical issues;\n- provide support and respond to inquiries;\n- improve performance, reliability, and user experience;\n- comply with legal obligations;\n- enforce our Terms and protect the rights, safety, and security of our business, users, and service providers.\n\nWe do not sell your personal information.\n\n## 5. Service providers and third-party processing\n\nWe use third-party service providers to operate GenPromptly. Depending on how the service is configured at the time of use, these providers may process personal information or user-submitted content on our behalf.\n\nOur current or expected categories of service providers include:\n\n- **OpenAI** – to process prompts and generate optimized outputs through the OpenAI API;\n- **Stripe** – to process subscription payments, billing, and related payment events;\n- **Clerk** (or a similar authentication provider) – to manage authentication and account access;\n- **Neon** (or a similar database provider) – to store account, subscription, and application data;\n- **Vercel** (or a similar hosting provider) – to host and deliver the website and application;\n- analytics, logging, monitoring, email, and customer support providers, if and when used.\n\nThese providers may process information in Canada, the United States, or other jurisdictions where they or their infrastructure operate.\n\n## 6. OpenAI API processing\n\nWhen you submit a prompt to GenPromptly, we may send that prompt, in whole or in part, to the OpenAI API so that an AI model can generate a revised or optimized prompt.\n\nThis means:\n- your submitted content may be processed by OpenAI;\n- prompts and outputs may be subject to OpenAI’s own technical, abuse prevention, logging, retention, and security practices;\n- we do not control OpenAI’s internal retention policies or infrastructure.\n\nBecause GenPromptly uses third-party AI services, we recommend that you **do not submit confidential, highly sensitive, regulated, or legally protected information unless you are comfortable with that information being processed by those providers and unless you have the right to submit it**.\n\n## 7. Payments and billing\n\nPayments and subscriptions are processed by Stripe or another payment processor we designate. We do not directly store full payment card details on our own servers.\n\nStripe may collect and process payment-related information according to its own privacy policy, terms, and compliance obligations.\n\n## 8. Cookies, analytics, and similar technologies\n\nWe may use cookies, local storage, analytics tools, and similar technologies to:\n- keep you signed in;\n- remember preferences;\n- understand usage patterns;\n- improve performance and reliability;\n- detect abuse and fraud.\n\nYou may be able to control certain cookies through your browser settings. Disabling some cookies may affect how GenPromptly works.\n\n## 9. Data retention\n\nWe retain information for as long as reasonably necessary to:\n- provide the service;\n- maintain account records;\n- administer subscriptions;\n- prevent fraud or abuse;\n- comply with legal, tax, accounting, and enforcement obligations;\n- resolve disputes and enforce agreements.\n\nRetention periods may vary depending on the type of data and the systems involved. Some third-party providers may retain data according to their own policies and technical configurations.\n\n## 10. Security\n\nWe use reasonable administrative, technical, and organizational safeguards to protect personal information. However, no system is completely secure, and we cannot guarantee absolute security.\n\nYou are responsible for keeping your account credentials secure and for notifying us if you believe your account has been compromised.\n\n## 11. Your choices and rights\n\nSubject to applicable law, you may have the right to:\n- access personal information we hold about you;\n- request correction of inaccurate personal information;\n- request deletion of your account or certain data;\n- withdraw consent where processing is based on consent, subject to legal or contractual restrictions;\n- opt out of non-essential marketing communications.\n\nTo make a privacy request, contact us at **opsforlocal@gmail.com**.\n\n## 12. Children\n\nGenPromptly is not intended for children under the age required to provide meaningful consent under applicable law. If we learn that we have collected personal information from a child inappropriately, we will take reasonable steps to delete it.\n\n## 13. International transfers\n\nYour information may be processed or stored outside your province, territory, or country, including in the United States. Laws in those jurisdictions may differ from the laws where you live.\n\n## 14. Legal disclosures\n\nWe may disclose information where reasonably necessary to:\n- comply with law, court orders, subpoenas, or lawful requests;\n- detect, investigate, or prevent fraud, abuse, or security incidents;\n- protect our rights, users, service providers, or the public;\n- enforce our Terms or other agreements.\n\n## 15. Changes to this Policy\n\nWe may update this Privacy Policy from time to time. If we make material changes, we may post an updated version on the website, update the effective date, or provide other appropriate notice.\n\nYour continued use of GenPromptly after an updated Policy becomes effective means you accept the updated Policy to the extent permitted by law.\n\n## 16. Contact\n\n**OpsForLocal / GenPromptly**  \nLegal owner: **Kairui Bi**  \nGeneral contact: **opsforlocal@gmail.com**  \nPrivacy contact: **opsforlocal@gmail.com**\r\n";
+import { legalCompanyName, legalContactEmail } from "../../lib/legal";
 
+export const privacyPolicyMarkdown = `# Privacy Policy
+
+**Effective Date:** April 17, 2026
+
+This Privacy Policy explains how **${legalCompanyName}** ("we," "us," or "our") collects, uses, discloses, stores, and safeguards personal information in connection with **GenPromptly**.
+
+**GenPromptly is a product and brand operated by ${legalCompanyName} and is not a separate legal entity.** When this Policy refers to "GenPromptly," it refers to the GenPromptly website, app, related pages, and related services operated by ${legalCompanyName}.
+
+By using GenPromptly, creating an account, submitting prompts, or purchasing a subscription, you acknowledge that you have read this Privacy Policy.
+
+## 1. What GenPromptly does
+
+GenPromptly helps users turn rough prompts into clearer, more structured prompts. To provide this service, we may send all or part of a user's submitted prompt, together with system instructions and relevant processing context, to third-party service providers, including the OpenAI API, to generate an optimized output.
+
+GenPromptly is an AI-assisted tool. It does not guarantee factual accuracy, completeness, or suitability for any particular purpose.
+
+## 2. Information we collect
+
+We may collect the following categories of information:
+
+### A. Account and identity information
+- Name
+- Email address
+- Account identifiers
+- Authentication-related metadata
+
+### B. Billing and subscription information
+- Customer ID
+- Subscription status
+- Plan type
+- Billing country or region
+- Limited payment-related metadata provided by our payment processor
+
+We do **not** directly store full payment card numbers on our own servers.
+
+### C. Prompt and usage information
+- Prompts you submit
+- Outputs returned by the service
+- Usage counts
+- Feature interaction data
+- Error reports
+- Support messages you send us
+
+### D. Technical information
+- IP address
+- Browser type
+- Device information
+- Operating system
+- Log data
+- Analytics and cookie-related data
+
+## 3. How we collect information
+
+We collect information:
+- directly from you when you create an account, submit prompts, contact support, or purchase a subscription;
+- automatically when you use the website or app;
+- from service providers that help us operate the service, such as authentication, hosting, database, analytics, AI, and payment providers.
+
+## 4. Why we use information
+
+We use personal information to:
+- create and manage your account;
+- provide GenPromptly's prompt optimization service;
+- authenticate users and secure accounts;
+- process subscriptions and manage billing;
+- monitor usage limits, abuse, fraud, and technical issues;
+- provide support and respond to inquiries;
+- improve performance, reliability, and user experience;
+- comply with legal obligations;
+- enforce our Terms and protect the rights, safety, and security of our business, users, and service providers.
+
+We do not sell your personal information.
+
+## 5. Service providers and third-party processing
+
+We use third-party service providers to operate GenPromptly. Depending on how the service is configured at the time of use, these providers may process personal information or user-submitted content on our behalf.
+
+Our current or expected categories of service providers include:
+
+- **OpenAI** - to process prompts and generate optimized outputs through the OpenAI API;
+- **Stripe** - to process subscription payments, billing, and related payment events;
+- **Clerk** (or a similar authentication provider) - to manage authentication and account access;
+- **Neon** (or a similar database provider) - to store account, subscription, and application data;
+- **Vercel** (or a similar hosting provider) - to host and deliver the website and application;
+- analytics, logging, monitoring, email, and customer support providers, if and when used.
+
+These providers may process information in Canada, the United States, or other jurisdictions where they or their infrastructure operate.
+
+## 6. OpenAI API processing
+
+When you submit a prompt to GenPromptly, we may send that prompt, in whole or in part, to the OpenAI API so that an AI model can generate a revised or optimized prompt.
+
+This means:
+- your submitted content may be processed by OpenAI;
+- prompts and outputs may be subject to OpenAI's own technical, abuse prevention, logging, retention, and security practices;
+- we do not control OpenAI's internal retention policies or infrastructure.
+
+Because GenPromptly uses third-party AI services, we recommend that you **do not submit confidential, highly sensitive, regulated, or legally protected information unless you are comfortable with that information being processed by those providers and unless you have the right to submit it**.
+
+## 7. Payments and billing
+
+Payments and subscriptions are processed by Stripe or another payment processor we designate. We do not directly store full payment card details on our own servers.
+
+Stripe may collect and process payment-related information according to its own privacy policy, terms, and compliance obligations.
+
+## 8. Cookies, analytics, and similar technologies
+
+We may use cookies, local storage, analytics tools, and similar technologies to:
+- keep you signed in;
+- remember preferences;
+- understand usage patterns;
+- improve performance and reliability;
+- detect abuse and fraud.
+
+You may be able to control certain cookies through your browser settings. Disabling some cookies may affect how GenPromptly works.
+
+## 9. Data retention
+
+We retain information for as long as reasonably necessary to:
+- provide the service;
+- maintain account records;
+- administer subscriptions;
+- prevent fraud or abuse;
+- comply with legal, tax, accounting, and enforcement obligations;
+- resolve disputes and enforce agreements.
+
+Retention periods may vary depending on the type of data and the systems involved. Some third-party providers may retain data according to their own policies and technical configurations.
+
+## 10. Security
+
+We use reasonable administrative, technical, and organizational safeguards to protect personal information. However, no system is completely secure, and we cannot guarantee absolute security.
+
+You are responsible for keeping your account credentials secure and for notifying us if you believe your account has been compromised.
+
+## 11. Your choices and rights
+
+Subject to applicable law, you may have the right to:
+- access personal information we hold about you;
+- request correction of inaccurate personal information;
+- request deletion of your account or certain data;
+- withdraw consent where processing is based on consent, subject to legal or contractual restrictions;
+- opt out of non-essential marketing communications.
+
+To make a privacy request, contact us at **${legalContactEmail}**.
+
+## 12. Children
+
+GenPromptly is not intended for children under the age required to provide meaningful consent under applicable law. If we learn that we have collected personal information from a child inappropriately, we will take reasonable steps to delete it.
+
+## 13. International transfers
+
+Your information may be processed or stored outside your province, territory, or country, including in the United States. Laws in those jurisdictions may differ from the laws where you live.
+
+## 14. Legal disclosures
+
+We may disclose information where reasonably necessary to:
+- comply with law, court orders, subpoenas, or lawful requests;
+- detect, investigate, or prevent fraud, abuse, or security incidents;
+- protect our rights, users, service providers, or the public;
+- enforce our Terms or other agreements.
+
+## 15. Changes to this Policy
+
+We may update this Privacy Policy from time to time. If we make material changes, we may post an updated version on the website, update the effective date, or provide other appropriate notice.
+
+Your continued use of GenPromptly after an updated Policy becomes effective means you accept the updated Policy to the extent permitted by law.
+
+## 16. Contact
+
+**GenPromptly**  
+Operated by: **${legalCompanyName}**  
+General contact: **${legalContactEmail}**  
+Privacy contact: **${legalContactEmail}**
+`;

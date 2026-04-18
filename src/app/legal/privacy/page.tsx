@@ -6,7 +6,7 @@ import { privacyPolicyMarkdown } from "../../../content/legal/privacyPolicyMarkd
 export const metadata: Metadata = {
   title: "Privacy Policy | GenPromptly",
   description:
-    "Privacy Policy for GenPromptly, a B2B SaaS prompt operations platform operated by OpsForLocal.",
+    "Privacy Policy for GenPromptly, a B2B SaaS prompt operations platform operated by Kairui Bi.",
 };
 
 export default function PrivacyPolicyPage() {
