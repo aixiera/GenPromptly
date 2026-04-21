@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { HttpError } from "./httpError";
+import { isDatabaseConfigurationError } from "../db";
 
 type PrismaKnownError = Prisma.PrismaClientKnownRequestError;
 
@@ -34,6 +35,15 @@ function makeConnectionError(code: string, scope: string, details?: unknown): Ht
 }
 
 export function toInfraHttpError(error: unknown, scope: string): HttpError | null {
+  if (isDatabaseConfigurationError(error)) {
+    return new HttpError(
+      503,
+      "DATABASE_NOT_CONFIGURED",
+      "Database is not configured. Set DATABASE_URL or DIRECT_URL in the deployment environment.",
+      { scope }
+    );
+  }
+
   if (isPrismaKnownError(error)) {
     if (error.code === "P2021" || error.code === "P2022") {
       return makeSchemaOutdatedError(error, scope);

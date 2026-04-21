@@ -38,8 +38,8 @@ Optional but recommended:
 3. Apply Prisma schema and seed:
 
 ```bash
-pnpm prisma generate
-pnpm prisma migrate deploy
+pnpm db:generate
+pnpm db:migrate:deploy
 pnpm db:seed
 ```
 
@@ -55,6 +55,29 @@ pnpm dev
 pnpm exec tsc --noEmit
 pnpm lint
 pnpm build
+```
+
+## Vercel Deploy
+
+Set these environment variables in `Vercel -> Project Settings -> Environment Variables` before deploying:
+
+- `DATABASE_URL` or `DIRECT_URL`
+- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+
+Recommended for full functionality:
+
+- `NEXT_PUBLIC_APP_URL`
+- `OPENAI_API_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PLUS_PRICE_ID`
+
+The Vercel build now runs `prisma generate` and `next build`, but it does **not** run database migrations automatically.
+Run migrations separately from your own machine or CI/CD after the database credentials are ready:
+
+```bash
+pnpm db:migrate:deploy
 ```
 
 ## Production Notes

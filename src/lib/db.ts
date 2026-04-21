@@ -5,6 +5,20 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
+export class DatabaseConfigurationError extends Error {
+  constructor() {
+    super("DATABASE_URL or DIRECT_URL must be configured.");
+    this.name = "DatabaseConfigurationError";
+  }
+}
+
+export function isDatabaseConfigurationError(error: unknown): error is DatabaseConfigurationError {
+  return (
+    error instanceof DatabaseConfigurationError ||
+    (error instanceof Error && error.name === "DatabaseConfigurationError")
+  );
+}
+
 function stripWrappingQuotes(value: string): string {
   const trimmed = value.trim();
   if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
@@ -67,34 +81,52 @@ function resolveConnectionString(): string {
   return normalizedDatabase || normalizedDirect;
 }
 
-const connectionString = resolveConnectionString();
-if (!connectionString) {
-  throw new Error("DATABASE_URL or DIRECT_URL must be configured.");
-}
-
-const adapter = new PrismaPg(
-  { connectionString },
-  {
-    onConnectionError: (err) => {
-      if (process.env.NODE_ENV !== "production") {
-        console.error("Prisma connection error:", err.message);
-      }
-    },
+function createPrismaClient(): PrismaClient {
+  const connectionString = resolveConnectionString();
+  if (!connectionString) {
+    throw new DatabaseConfigurationError();
   }
-);
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
+  const adapter = new PrismaPg(
+    { connectionString },
+    {
+      onConnectionError: (err) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Prisma connection error:", err.message);
+        }
+      },
+    }
+  );
+
+  return new PrismaClient({
     adapter,
     transactionOptions: {
       maxWait: 10_000,
       timeout: 20_000,
     },
   });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
 }
+
+export function getPrismaClient(): PrismaClient {
+  const client = globalForPrisma.prisma ?? createPrismaClient();
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prisma = client;
+  }
+
+  return client;
+}
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client, property, client);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+  set(_target, property, value) {
+    const client = getPrismaClient();
+    return Reflect.set(client, property, value, client);
+  },
+});
 
 export default prisma;
